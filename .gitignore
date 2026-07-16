@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Env & secrets — only .env.tpl templates with op:// refs are committed
+.env
+.env.*
+!.env.tpl
+!.env.*.tpl
+
+# Build output
+dist/
+build/
+out/
+target/
+*.app
+*.dmg
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs & temp
+*.log
+tmp/

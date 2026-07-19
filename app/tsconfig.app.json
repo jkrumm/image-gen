@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "basalt-ui/configs/tsconfig.react-app.json",
+  "include": ["src"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src-tauri",
+    "src/**/*.test.ts",
+    "src/components/refine/refine.worker.ts"
+  ]
+}

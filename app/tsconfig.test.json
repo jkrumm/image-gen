@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "basalt-ui/configs/tsconfig.node.json",
+  "compilerOptions": {
+    "types": ["bun-types"]
+  },
+  "include": ["src/lib/imaging/**/*.ts"],
+  "exclude": ["src/lib/imaging/dom.ts", "src/lib/imaging/dom.test.ts"]
+}

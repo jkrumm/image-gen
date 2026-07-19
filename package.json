@@ -1,0 +1,25 @@
+{
+  "name": "image-gen",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --filter '*' dev:stack",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun run --filter '*' test",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt 'shared/**' 'gateway/**' 'app/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --write",
+    "format:check": "oxfmt 'shared/**' 'gateway/**' 'app/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --check",
+    "pre": "bun run format:check && bun run lint && bun run typecheck"
+  },
+  "workspaces": [
+    "shared",
+    "gateway",
+    "app"
+  ],
+  "devDependencies": {
+    "basalt-ui": "file:../basalt-ui/packages/basalt-ui",
+    "oxfmt": "0.53.0",
+    "oxlint": "1.68.0"
+  }
+}

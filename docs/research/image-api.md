@@ -1,5 +1,7 @@
 # Research: gpt-image-2 API Surface (July 2026)
 
+> **⚠️ Partly superseded — read `endpoint-verification.md` first.** A live capability probe (2026-07-16) disproved four claims in this document against the endpoint we actually call: `/images/edits` works with gpt-image-2, custom sizes work on the edits endpoint, `n > 1` works on all three models, and `input_fidelity` is a hard 400 on gpt-image-2 rather than merely ignored. The corrected facts are consolidated in `CLAUDE.md` → "Load-bearing API facts". Treat everything below as a dated secondary source: useful for prompt-craft and pricing background, **not** authoritative on capabilities.
+
 Findings from deep research on the OpenAI image-generation API as of mid-2026, distilled to what shapes this project. Sources cited inline; full source list at the bottom.
 
 ## Model landscape

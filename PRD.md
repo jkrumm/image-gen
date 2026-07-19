@@ -2,55 +2,60 @@
 
 ## Problem
 
-I design apps, generate art (journal cover images), and create icons, but have no personal tool for it — just ad-hoc prompting in chat UIs with no parameter control, no library, no iteration workflow. I already run a unified OpenAI-compatible LLM endpoint that exposes `gpt-image-2` (verified working — see `docs/research/endpoint-verification.md`), and I have an established pattern for small stateless VPS gateways (Tailscale-only, bearer auth, Bun + Elysia).
+I design apps, generate art (journal covers, article images), and create icons and web assets, but had no personal tool for it. The MVP (phases 1–3, built 2026-07) solved transport: a stateless gateway wrapping the gpt-image family and a Tauri app with compose/edit/refine/library tabs and a disk-backed library. What it did not solve is the *creative workflow*: prompting expertise lives in my head, generation settings are hand-picked every time, the library is a flat sort-only grid that hides derived work, editing is blind to the library, styles and brand context aren't entities, and the enhance endpoint has no UI at all.
+
+The redesign turns the app from an API console into a studio with a brain. Full mental model, IA, user stories, and design rationale: **`docs/concept.md`**. Prompting doctrine: **`docs/prompting-playbook.md`** (splitting into `shared/playbook/` — the enhancer's compiled system prompt and the in-app reference). This PRD holds scope, waves, and success criteria.
 
 ## Goals
 
-1. **image-gen-gateway** — a stateless HTTP service on the VPS wrapping the gpt-image model family behind a clean, typed API. No database, no image storage: requests in, images (base64) + usage/cost out. Reachable only over the tailnet; usable later by other agents (Hermes, Claude Code) via plain REST.
-2. **A beautiful macOS app** (Tauri v2 — decision rationale in `docs/research/desktop-framework.md`) that is the primary client: compose prompts, pick model/size/quality, view results, iterate, and keep the entire library on local disk.
-3. **Local-first library** — every generation (inputs, outputs, parameters) lands in a human-browsable folder structure with JSON metadata sidecars. The app owns state; the gateway owns none.
+1. **Prompt intelligence.** A brief becomes a **Plan**: playbook-conditioned prompt + auto-derived settings (model/size/quality/background/n/endpoint) + policy pre-check + cost estimate — always shown before run, always editable, never silent. Iteration is delta-based with preserve lists; series consistency comes from prompt context (project anchors), not chained edits.
+2. **Library as a DAM.** Projects (many-to-many, context-capturing, item-authoritative membership), behavioral roles + star, prompt/param search with facets, visible lineage (ancestors + children incl. refine derivatives), use-as trio on every image, imports of external assets. Refine becomes an inspector action; the tab dies.
+3. **Style guides as first-class entities.** Named bundles (verbatim palette, typography feel, vocabulary, ≤40-word fragment, avoid-list, reference images) distilled by the gateway from library images, `design.md`, website screenshots, or CSS — attachable to any Plan as fragment + edit references.
+4. **Policy-aware generation.** The pre-check warns before spend, rewrites toward compliant phrasing visibly, names hard walls instead of contorting, and turns upstream `moderation_blocked` errors (stage + categories) into guided recovery. Never an evasion tool.
+5. **Cost-shaped workflow.** Draft at low (n>1, streamed previews on by default), promote winners to high deliberately. The 35.8× spread is a first-class UX concern.
 
 ## Non-goals
 
-- MCP facade on the gateway (REST is enough for agents).
-- SVG vectorization (post-MVP fast-follow, see below).
-- Public internet exposure, multi-user, auth beyond a bearer token.
-- Cloud/server-side image storage or a database anywhere.
-- Windows/Linux, App Store distribution, auto-update infrastructure.
+- MCP facade, multi-user, cloud state, public exposure (unchanged from MVP).
+- Style strength sliders, lineage graph canvases, embeddings/semantic search, auto-tagging, chat-shaped enhancement, in-app playbook editing, moderation simulators (rejected with rationale in `docs/concept.md` §9).
+- SQLite in the first waves — in-memory index over sidecars; SQLite is the named escape hatch.
+- SVG vectorization and gpt-image-2+matting transparency remain post-MVP fast-follows (handover open decisions).
 
-## MVP scope (phased — each phase ships working software)
+## Waves (each ships working software; wave 1 may ship in slices, but the concept must stand across all of them)
 
-### Phase 1 — Core loop
-- Gateway: `generate` endpoint (text-to-image) proxying `/images/generations`; model routing (`gpt-image-2` default, `gpt-image-1.5` for transparency, `gpt-image-1-mini` as cheap tier); size/quality/format/background params; usage + estimated cost in every response; bearer auth; OpenAPI spec; Docker deploy on the VPS, Tailscale-only.
-- App: prompt composer with parameter controls, generation view, library on disk (`~/Pictures/ImageGen/<generation-id>/` with images + `metadata.json`), gallery/history browser with detail view (prompt, params, cost), re-run/tweak from any past generation.
+### Wave 0 — Verify the floor (human, MacBook)
+Drive the already-built-but-never-run MVP surface (`docs/handover.md`): plain generate, streamed generate, multi-ref edit, masked inpaint, library→edit seed, `/enhance` curl. Fix what breaks. Commit the MVP. **Nothing in waves 1+ builds on unverified runtime behavior.** Also probe: `moderation=low` on `/images/edits` per model; `moderation_details` presence in our proxy's wrapped errors.
 
-### Phase 2 — Editing & references
-- Gateway: image editing/inpainting and reference-image generation. Note: `/images/edits` is broken upstream for GPT Image models; the editing path is the Responses API `image_generation` tool — verify passthrough first (see `docs/research/endpoint-verification.md`, "Still unverified").
-- App: drag-drop input images, mask drawing for inpainting, "iterate on this image" flow feeding outputs back as inputs.
+### Wave 1 — The brain and the merge
+- `shared/playbook/` (split from `docs/prompting-playbook.md`) + `PLAYBOOK_VERSION`; contract v2 schemas (plan request/response, sidecar schema 2 types).
+- Gateway: `POST /enhance` v2 (modes auto/full/gaps/off, intent detection, verbatim post-check, settings derivation validated by `rules.ts`, policy warnings, cost estimate, series/style/preserve context) with system prompt compiled from the playbook; `moderation_details` passthrough; `GET /` reports `playbook_version`.
+- App: **Create surface** (Compose+Edit merged; library reference picker; Plan card with marked additions, editable prompt, derived-settings prefill, warnings with one-click rewrites, cost-before-run; persisted draft state); streaming previews on by default (dormant SSE client goes live); moderation-block recovery UX (stage-aware advice, no auto-retry).
+- Library: sidecar **schema 2** (read-time migration), roles + star + search + facets, lineage panel, use-as trio, Tweak/Re-run/Promote differentiated, Refine relocated to the inspector, Refine tab removed.
 
-### Phase 3 — Prompt enhancement & polish
-- Gateway: optional LLM prompt-enhancement step (short brief → refined prompt via a text model on the same endpoint), returned alongside the image so the library records both.
-- App: purpose presets (journal cover, app icon, art) that pre-fill size/quality/model routing; streaming partial-image previews if passthrough works.
+### Wave 2 — Organization and style
+- Projects: sidebar, context capture, retroactive/bulk filing, anchors + series context in Plans, per-project cost roll-up.
+- Style guides: `.imagegen/styles/`, `POST /styles/distill` (sources: library images + `design.md`), Styles surface, attach chip, proof sheet; imports (`kind: import`) so external brand assets can seed guides and references.
 
-## Post-MVP fast-follow (named, not built)
+### Wave 3 — Sharpening (trajectory items promoted as reality demands)
+Screenshot + CSS distillation sources; chained-edit drift guard; saved searches; enhance eval corpus surfaced as few-shot context; named work-items/bench (concept §10) if multi-round work strains persisted drafts.
 
-**Smart SVG icon pipeline** — generate raster icon (transparent via `gpt-image-1.5`) → vectorize (vtracer/potrace and/or LLM-drawn SVG) → preview and store SVG alongside the raster. Quality of vectorization is its own research task.
+## Key constraints (live-probed; details `docs/research/endpoint-verification.md` + `CLAUDE.md`)
 
-## Key constraints (from research — details in `docs/research/image-api.md`)
-
-- gpt-image-2 has **no transparent background** support → model routing is a first-class gateway concern, not an afterthought.
-- Editing must go through the Responses API until the `/images/edits` upstream bug is fixed.
-- GPT Image models always return base64 — which fits the stateless design: the gateway never touches disk.
-- Full token usage is returned per generation → cost shown in the app per image and aggregated in the library.
+- Capability matrix (`MODEL_CAPABILITIES`) is the single source of truth: gpt-image-2 = custom sizes, no transparency, rejects `input_fidelity`; 1.5 = presets-only, transparency, fidelity; mini = cheap. Transparency auto-routes to 1.5. The Plan's derivations must round-trip through `rules.ts`, never re-derive.
+- Cost: low ≈ $0.006, high ≈ $0.211 (35.8×); streaming +$0.002 flat; upstream may send fewer partials than requested — never wait on a fixed count.
+- Upstream wraps user errors in 503 `"..._user_error"`; `moderation_blocked` is one of them — never retried.
+- Gateway stays stateless; all state in `~/Pictures/ImageGen/` (sidecars authoritative, human-browsable, index rebuildable). Public repo: placeholders only, secrets via 1Password templates.
 
 ## Success criteria
 
-1. From the app: type a prompt, get an image in seconds, and find it — with its full parameters and cost — in a Finder-browsable folder without the app running.
-2. An icon with a transparent background and a 2560×1440 journal cover are both one preset click away.
-3. Take any past generation, tweak its prompt or feed it back as an edit input, and get a new linked generation.
-4. `curl` with a bearer token from any tailnet machine generates an image — proving the gateway is client-agnostic.
-5. The gateway survives redeploys with zero state loss because it has no state.
+1. A three-word brief produces a Plan whose prompt follows the playbook's canonical order, whose settings I don't have to touch for the common cases, and whose every addition and assumption is visible and editable before a cent is spent.
+2. Pasting a 140-word expert prompt leaves it untouched (passthrough banner) — the enhancer never overwrites deliberate precision.
+3. An icon set, a 2560×1440 on-brand hero (from a distilled style guide), and journal cover #4 that visibly belongs to covers #1–3 are each producible end-to-end in the UI without re-typing style context.
+4. Any image's ancestry and descendants (edits, promotes, refine exports) are one click from its detail view; "where is that image from three weeks ago" is a search, not Finder archaeology.
+5. A policy-sensitive artistic brief gets a visible compliant rewrite or an honest hard-wall refusal before spend; a `moderation_blocked` response yields stage-aware guidance, never a blind retry.
+6. Every generation still lands in a Finder-browsable folder whose sidecar alone reconstructs prompt, plan, project membership, roles, and lineage — delete `.imagegen/` index state and nothing is lost.
+7. Hermes (or curl) can call `/enhance` + `/generate` and inherit the same brain and policy guard — the gateway remains client-agnostic and stateless.
 
-## Architecture (one paragraph, intentionally high-level)
+## Architecture (unchanged foundation)
 
-Bun monorepo: `gateway/` (Elysia + Bun, official `openai` SDK pointed at the unified endpoint, typed contract shared with the app, Docker + Makefile deploy following the research-gateway/audio-gateway pattern) and `app/` (Tauri v2, React + Tailwind v4, basalt-ui as design foundation, `tauri-plugin-fs`/`-dialog` for the library, `tauri-plugin-macos-fps` for ProMotion). Implementation details are the implementing agent's call within these boundaries.
+Bun monorepo: `gateway/` (Elysia, stateless, Docker/Makefile deploy, Tailscale-only, bearer auth), `app/` (Tauri v2, React + Mantine v9 + basalt-ui), `shared/` (zod contract + `rules.ts` + playbook). Implementation details are the implementing agent's call within these boundaries; `docs/concept.md` §6–8 specifies the data model, gateway shapes, and playbook structure.

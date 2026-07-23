@@ -119,4 +119,59 @@ describe('POST /generate', () => {
         })
       },
     ))
+
+  /**
+   * `background: "transparent"` is still a schema-valid value — historical
+   * sidecars carry it — so this is a hand-rolled business-rule 400, not the
+   * 422 Elysia would emit for a schema violation. It must never be silently
+   * downgraded to opaque, and must never reach upstream (which answers with a
+   * 400 wrapped in a 503, surfacing here as an opaque 502).
+   */
+  test('a transparent-background request is refused with a 400 naming the missing alpha channel', async () => {
+    let upstreamCalled = false
+    await withMockedFetch(
+      async () => {
+        upstreamCalled = true
+        return new Response('{}', { status: 200 })
+      },
+      async () => {
+        const res = await generateRoutes.handle(
+          new Request('http://localhost/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt: 'a sticker of a cat', background: 'transparent' }),
+          }),
+        )
+        expect(res.status).toBe(400)
+        const body = (await res.json()) as { error: { message: string; type: string } }
+        expect(body.error.type).toBe('invalid_request_error')
+        expect(body.error.message).toMatch(/gpt-image-2/)
+        expect(body.error.message).toMatch(/alpha channel/)
+        expect(upstreamCalled).toBe(false)
+      },
+    )
+  })
+
+  test('an opaque background is accepted (the 400 is specific to transparency)', async () =>
+    withMockedFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            created: 1700000000,
+            data: [{ b64_json: PNG_B64 }],
+            usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      async () => {
+        const res = await generateRoutes.handle(
+          new Request('http://localhost/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt: 'a sticker of a cat', background: 'opaque' }),
+          }),
+        )
+        expect(res.status).toBe(200)
+      },
+    ))
 })

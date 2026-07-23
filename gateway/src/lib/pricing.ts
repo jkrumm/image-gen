@@ -1,4 +1,4 @@
-import type { Cost, ImageModel, Usage } from '@image-gen/shared'
+import type { Cost, KnownImageModel, Usage } from '@image-gen/shared'
 
 interface Rate {
   text_in: number
@@ -6,8 +6,17 @@ interface Rate {
   out: number
 }
 
-// USD per 1M tokens (OpenAI direct pricing, see docs/research/image-api.md).
-const RATES: Record<ImageModel, Rate> = {
+/**
+ * USD per 1M tokens (OpenAI direct pricing, see docs/research/image-api.md).
+ *
+ * Keyed by `KnownImageModel`, not `ImageModel`: pricing is applied to usage
+ * *records*, which are historical. Generation is single-model today, but the
+ * library still holds sidecars produced on gpt-image-1.5 / gpt-image-1-mini,
+ * and `computeCost` is what puts a number next to them. Dropping a retired
+ * model's rate here would silently turn every one of those into
+ * `{ usd: null, source: 'none' }`. Never shrink this map.
+ */
+const RATES: Record<KnownImageModel, Rate> = {
   'gpt-image-2': { text_in: 5.0, image_in: 8.0, out: 30.0 },
   'gpt-image-1.5': { text_in: 5.0, image_in: 8.0, out: 32.0 },
   'gpt-image-1-mini': { text_in: 2.0, image_in: 2.5, out: 8.0 },

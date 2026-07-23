@@ -1,6 +1,7 @@
 import {
   resolveModel,
   routingReason,
+  validateBackgroundForModel,
   validateInputFidelityForModel,
   validateSizeForModel,
   type EditRequest,
@@ -15,15 +16,16 @@ export interface RouteResult {
 }
 
 /**
- * Pick the model that actually serves the request. Thin wrapper over the
- * shared `resolveModel`/`routingReason` — kept as its own function (rather
- * than inlining the two shared calls at each call site) so the gateway's
- * `RouteResult` shape stays a single source of truth for routes and tests.
+ * Pick the model that actually serves the request.
+ *
+ * Generation is now single-model, so this always resolves to gpt-image-2 and
+ * `routed` is always false. The field survives because the response contract
+ * still declares `routed`/`routing_reason` (see `contract.ts`) and clients read
+ * them; it is reported honestly rather than removed. `routingReason` is still
+ * consulted rather than hardcoded to `false` so that if a second generatable
+ * model ever returns, this stays correct without an edit here.
  */
-export function routeModel(req: {
-  model: GenerateRequest['model']
-  background: GenerateRequest['background']
-}): RouteResult {
+export function routeModel(req: { model: GenerateRequest['model'] }): RouteResult {
   const model = resolveModel(req)
   const reason = routingReason(req)
   if (reason === null) return { model, routed: false }
@@ -37,6 +39,19 @@ export function routeModel(req: {
  */
 export function validateSize(model: ImageModel, size: string): string | null {
   return validateSizeForModel(model, size)
+}
+
+/**
+ * Validate `background` against a model's alpha-channel support. gpt-image-2
+ * hard-400s on `transparent` upstream and there is no longer a model to
+ * reroute to, so the request is refused here with an actionable message rather
+ * than silently downgraded to opaque or bounced off upstream as a 502.
+ */
+export function validateBackground(
+  model: ImageModel,
+  background: GenerateRequest['background'],
+): string | null {
+  return validateBackgroundForModel(model, background)
 }
 
 /**

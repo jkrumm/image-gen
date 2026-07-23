@@ -8,7 +8,12 @@ import {
   errorResponseSchema,
   streamEventSchema,
 } from '@image-gen/shared'
-import { routeModel, validateInputFidelity, validateSize } from '../lib/routing.js'
+import {
+  routeModel,
+  validateBackground,
+  validateInputFidelity,
+  validateSize,
+} from '../lib/routing.js'
 import {
   editImages,
   openEditStream,
@@ -113,17 +118,18 @@ export const editRoutes = new Elysia().post(
     }
     const fields = fieldsResult.data
 
-    const { model, routed, reason } = routeModel({
-      model: fields.model,
-      background: fields.background,
-    })
+    const { model, routed, reason } = routeModel({ model: fields.model })
 
     const sizeError = validateSize(model, fields.size)
     if (sizeError) {
-      const message = routed
-        ? `${sizeError} (request was routed to ${model}: ${reason})`
-        : sizeError
-      return status(400, { error: { message, type: 'invalid_request_error' } })
+      return status(400, { error: { message: sizeError, type: 'invalid_request_error' } })
+    }
+
+    // See generate.ts: `transparent` is a schema-valid value with no
+    // generatable model behind it, so it is a business-rule 400, not a 422.
+    const backgroundError = validateBackground(model, fields.background)
+    if (backgroundError) {
+      return status(400, { error: { message: backgroundError, type: 'invalid_request_error' } })
     }
 
     const fidelityError = validateInputFidelity(model, fields.input_fidelity)
@@ -219,7 +225,7 @@ export const editRoutes = new Elysia().post(
       tags: ['Images'],
       summary: 'Edit / inpaint images',
       description:
-        "Edits or inpaints via the upstream gpt-image model family's `/images/edits` endpoint (multipart). Up to 16 reference images (`image[]`, or `image` for a single one) plus an optional alpha-PNG mask (`mask`), alongside the same fields as `/generate`. Validates image/mask count, size, and mime type, then the routed model's size and `input_fidelity` support, before calling upstream. Returns the same envelope as `/generate`. When `partial_images > 0`, responds with a `text/event-stream` instead.",
+        "Edits or inpaints via the upstream gpt-image model family's `/images/edits` endpoint (multipart). Up to 16 reference images (`image[]`, or `image` for a single one) plus an optional alpha-PNG mask (`mask`), alongside the same fields as `/generate`. Validates image/mask count, size, and mime type, then the resolved model's size, `background`, and `input_fidelity` support, before calling upstream. Returns the same envelope as `/generate`. When `partial_images > 0`, responds with a `text/event-stream` instead.",
       security: [{ BearerAuth: [] }],
     },
   },

@@ -31,6 +31,23 @@ describe('computeCost', () => {
     expect(cost.usd).toBeCloseTo(32.0, 10)
   })
 
+  /**
+   * Regression guard for the single-model split: gpt-image-1.5 and
+   * gpt-image-1-mini are no longer generatable, but the library is full of
+   * sidecars recorded against them. If `RATES` is ever narrowed from
+   * `KnownImageModel` to `ImageModel`, those all silently lose their price
+   * (`source: 'none'`) instead of failing loudly — so assert every retired
+   * model still prices.
+   */
+  test('retired models still price — usage records are historical', () => {
+    const usage: Usage = { input_tokens: 1000, output_tokens: 2000, total_tokens: 3000 }
+    for (const model of ['gpt-image-1.5', 'gpt-image-1-mini'] as const) {
+      const cost = computeCost(model, usage)
+      expect(cost.source).toBe('computed')
+      expect(cost.usd).toBeGreaterThan(0)
+    }
+  })
+
   test('unknown model returns no cost', () => {
     const usage: Usage = { input_tokens: 100, output_tokens: 100, total_tokens: 200 }
     expect(computeCost('not-a-real-model', usage)).toEqual({ usd: null, source: 'none' })

@@ -10,6 +10,7 @@ import {
   planWarningSchema,
   resolveModel,
   routingReason,
+  validateBackgroundForModel,
   validateInputFidelityForModel,
   validateSizeForModel,
   type Intent,
@@ -115,7 +116,19 @@ export function computeModeApplied(request: PlanRequest): ModeApplied {
 // ---------------------------------------------------------------------------
 
 const llmProposedSettingsSchema = z.object({
-  model: z.enum([...IMAGE_MODELS, 'auto'] as const).default('auto'),
+  /**
+   * `.catch('auto')` rather than a bare enum: the model is advisory, and a
+   * proposal naming a retired model (the enhance model has gpt-image-1.5 /
+   * -mini in its training data, and the playbook is edited independently of
+   * this file) must degrade to "let the gateway pick" — not fail the whole
+   * plan and burn a retry round-trip on a field the server overrules anyway.
+   * The enum still guarantees whatever survives here is generatable today, so
+   * the settings this returns always validate against the request schema.
+   */
+  model: z
+    .enum([...IMAGE_MODELS, 'auto'] as const)
+    .default('auto')
+    .catch('auto'),
   size: z.string().default('auto'),
   quality: z.enum(['low', 'medium', 'high', 'auto']).default('auto'),
   background: z.enum(['transparent', 'opaque', 'auto']).default('auto'),
@@ -154,10 +167,10 @@ The JSON object must have exactly this shape:
   "assumptions": ["<free-text notes on what you assumed or corrected>"],
   "warnings": [{ "code": "<short_code>", "severity": "warn"|"rewrite"|"hard", "message": "<explanation>", "suggested_rewrite": "<optional compliant rewrite>", "moderation_suggestion": "low", "predicted_stage": "input"|"output" }],
   "proposed_settings": {
-    "model": "gpt-image-2"|"gpt-image-1.5"|"gpt-image-1-mini"|"auto",
+    "model": "gpt-image-2"|"auto",
     "size": "<'auto', a preset (1024x1024, 1536x1024, 1024x1536), or a custom WxH>",
     "quality": "low"|"medium"|"high"|"auto",
-    "background": "transparent"|"opaque"|"auto",
+    "background": "opaque"|"auto" (never "transparent" — no available model has an alpha channel),
     "n": <integer 1-10>,
     "moderation": "auto"|"low",
     "input_fidelity": "high"|"low" (omit unless this is an edit with identity/product fidelity concerns),
@@ -454,9 +467,20 @@ export function resolveSettings(args: {
   const notes: string[] = []
   const merged = overlaySettings(args.proposed, args.overrides)
 
-  const model = resolveModel({ model: merged.model, background: merged.background })
-  const reason = routingReason({ model: merged.model, background: merged.background })
+  const model = resolveModel({ model: merged.model })
+  const reason = routingReason({ model: merged.model })
   if (reason) notes.push(`Rerouted to ${model}: ${reason}.`)
+
+  // `/enhance` is advisory — it returns settings the user is about to run, so
+  // it corrects an impossible background here (with a note) instead of handing
+  // back a plan that `/generate` would then reject with a 400. The hard refusal
+  // lives on the request path; this is the "rules.ts disposes" counterpart.
+  let background = merged.background
+  const backgroundError = validateBackgroundForModel(model, background)
+  if (backgroundError) {
+    notes.push(`Forced background to opaque: ${backgroundError}.`)
+    background = 'opaque'
+  }
 
   let size = merged.size
   const sizeError = validateSizeForModel(model, size)
@@ -482,7 +506,7 @@ export function resolveSettings(args: {
     model,
     size,
     quality: merged.quality,
-    background: merged.background,
+    background,
     n: merged.n,
     moderation: merged.moderation,
     partial_images: merged.partial_images,
@@ -613,6 +637,7 @@ export async function planFromRequest(request: PlanRequest): Promise<PlanResult>
     warnings: llm.warnings,
     mode_applied: modeApplied,
     playbook_version: PLAYBOOK_VERSION,
+    enhance_model: env.ENHANCE_MODEL,
   }
 
   return { response, usage }

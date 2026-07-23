@@ -1,40 +1,39 @@
 import { describe, expect, test } from 'bun:test'
-import { routeModel, validateInputFidelity, validateSize } from './routing.js'
+import { routeModel, validateBackground, validateInputFidelity, validateSize } from './routing.js'
 
 describe('routeModel', () => {
   test('auto resolves to gpt-image-2', () => {
-    expect(routeModel({ model: 'auto', background: 'auto' })).toEqual({
-      model: 'gpt-image-2',
-      routed: false,
-    })
+    expect(routeModel({ model: 'auto' })).toEqual({ model: 'gpt-image-2', routed: false })
   })
 
-  test('transparent + auto routes to gpt-image-1.5 with a reason', () => {
-    const result = routeModel({ model: 'auto', background: 'transparent' })
-    expect(result.model).toBe('gpt-image-1.5')
-    expect(result.routed).toBe(true)
-    expect(result.reason).toBeTruthy()
+  test('explicit gpt-image-2 is honored', () => {
+    expect(routeModel({ model: 'gpt-image-2' })).toEqual({ model: 'gpt-image-2', routed: false })
   })
 
-  test('transparent + gpt-image-2 routes to gpt-image-1.5', () => {
-    const result = routeModel({ model: 'gpt-image-2', background: 'transparent' })
-    expect(result.model).toBe('gpt-image-1.5')
-    expect(result.routed).toBe(true)
+  /**
+   * Was: "transparent + auto routes to gpt-image-1.5 with a reason". That
+   * fallback is gone — generation is single-model, so nothing reroutes and a
+   * transparent request is refused by `validateBackground` instead (see below).
+   */
+  test('routing never fires — there is no second generatable model', () => {
+    for (const model of ['auto', 'gpt-image-2'] as const) {
+      const result = routeModel({ model })
+      expect(result.routed).toBe(false)
+      expect(result.reason).toBeUndefined()
+    }
+  })
+})
+
+describe('validateBackground', () => {
+  test('opaque and auto are always fine', () => {
+    expect(validateBackground('gpt-image-2', 'opaque')).toBeNull()
+    expect(validateBackground('gpt-image-2', 'auto')).toBeNull()
   })
 
-  test('transparent + gpt-image-1-mini stays on mini', () => {
-    const result = routeModel({ model: 'gpt-image-1-mini', background: 'transparent' })
-    expect(result).toEqual({ model: 'gpt-image-1-mini', routed: false })
-  })
-
-  test('explicit gpt-image-1.5 without transparency is honored', () => {
-    const result = routeModel({ model: 'gpt-image-1.5', background: 'opaque' })
-    expect(result).toEqual({ model: 'gpt-image-1.5', routed: false })
-  })
-
-  test('transparent + gpt-image-1.5 does not route (already supports transparency)', () => {
-    const result = routeModel({ model: 'gpt-image-1.5', background: 'transparent' })
-    expect(result).toEqual({ model: 'gpt-image-1.5', routed: false })
+  test('transparent is rejected, naming the model and the missing alpha channel', () => {
+    const error = validateBackground('gpt-image-2', 'transparent')
+    expect(error).toMatch(/gpt-image-2/)
+    expect(error).toMatch(/alpha channel/)
   })
 })
 
@@ -62,35 +61,15 @@ describe('validateSize', () => {
   test('gpt-image-2 rejects an edge above the max', () => {
     expect(validateSize('gpt-image-2', '3840x1024')).toMatch(/3839/)
   })
-
-  test('gpt-image-1.5 accepts only presets', () => {
-    expect(validateSize('gpt-image-1.5', '1024x1024')).toBeNull()
-    expect(validateSize('gpt-image-1.5', '2560x1440')).toMatch(/only supports/)
-  })
-
-  test('gpt-image-1-mini accepts only presets', () => {
-    expect(validateSize('gpt-image-1-mini', '1536x1024')).toBeNull()
-    expect(validateSize('gpt-image-1-mini', '800x600')).toMatch(/only supports/)
-  })
 })
 
 describe('validateInputFidelity', () => {
   test('undefined is always fine', () => {
     expect(validateInputFidelity('gpt-image-2', undefined)).toBeNull()
-    expect(validateInputFidelity('gpt-image-1.5', undefined)).toBeNull()
   })
 
   test('gpt-image-2 rejects input_fidelity outright', () => {
     expect(validateInputFidelity('gpt-image-2', 'high')).toMatch(/gpt-image-2 does not support/)
     expect(validateInputFidelity('gpt-image-2', 'low')).toMatch(/does not support/)
-  })
-
-  test('gpt-image-1.5 accepts input_fidelity', () => {
-    expect(validateInputFidelity('gpt-image-1.5', 'high')).toBeNull()
-    expect(validateInputFidelity('gpt-image-1.5', 'low')).toBeNull()
-  })
-
-  test('gpt-image-1-mini rejects input_fidelity', () => {
-    expect(validateInputFidelity('gpt-image-1-mini', 'high')).toMatch(/does not support/)
   })
 })

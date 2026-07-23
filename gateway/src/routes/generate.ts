@@ -6,7 +6,7 @@ import {
   generateResponseSchema,
   streamEventSchema,
 } from '@image-gen/shared'
-import { routeModel, validateSize } from '../lib/routing.js'
+import { routeModel, validateBackground, validateSize } from '../lib/routing.js'
 import {
   generateImages,
   openGenerateStream,
@@ -22,14 +22,20 @@ import { buildUpstreamErrorBody } from '../lib/moderation-error.js'
 export const generateRoutes = new Elysia().post(
   '/generate',
   async ({ body, status, set }) => {
-    const { model, routed, reason } = routeModel({ model: body.model, background: body.background })
+    const { model, routed, reason } = routeModel({ model: body.model })
 
     const sizeError = validateSize(model, body.size)
     if (sizeError) {
-      const message = routed
-        ? `${sizeError} (request was routed to ${model}: ${reason})`
-        : sizeError
-      return status(400, { error: { message, type: 'invalid_request_error' } })
+      return status(400, { error: { message: sizeError, type: 'invalid_request_error' } })
+    }
+
+    // Business rule the request schema can't express: `transparent` is a valid
+    // *value* (historical sidecars carry it) but no generatable model has an
+    // alpha channel. Refuse loudly rather than downgrading to opaque behind the
+    // user's back or letting upstream 400 surface as a 502.
+    const backgroundError = validateBackground(model, body.background)
+    if (backgroundError) {
+      return status(400, { error: { message: backgroundError, type: 'invalid_request_error' } })
     }
 
     const upstreamParams: GenerateImagesParams = {
@@ -138,7 +144,7 @@ export const generateRoutes = new Elysia().post(
       tags: ['Images'],
       summary: 'Generate images',
       description:
-        'Generates one or more images via the upstream gpt-image model family. Validates the requested size, routes the model (e.g. transparency forces gpt-image-1.5), calls upstream, and returns base64 images with usage/cost telemetry. When `partial_images > 0`, responds with a `text/event-stream` of `StreamEvent` frames (`partial_image`* → exactly one `completed` or `error`) instead of the JSON envelope documented here.',
+        "Generates one or more images via the upstream gpt-image model family. Validates the requested size and background against the resolved model's capabilities (a transparent background is rejected with a 400 — no generatable model has an alpha channel), calls upstream, and returns base64 images with usage/cost telemetry. When `partial_images > 0`, responds with a `text/event-stream` of `StreamEvent` frames (`partial_image`* → exactly one `completed` or `error`) instead of the JSON envelope documented here.",
       security: [{ BearerAuth: [] }],
     },
   },

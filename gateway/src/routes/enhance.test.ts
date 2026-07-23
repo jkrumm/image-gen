@@ -70,6 +70,16 @@ describe('POST /enhance', () => {
       },
     ))
 
+  test('enhance_model echoes env.ENHANCE_MODEL', async () =>
+    withMockedFetch(
+      async () => chatCompletion(VALID_LLM_PLAN),
+      async () => {
+        const res = await postEnhance({ brief: 'a lighthouse at dusk' })
+        const parsed = planResponseSchema.parse(await res.json())
+        expect(parsed.enhance_model).toBe(process.env['ENHANCE_MODEL'] ?? 'gpt-5.6')
+      },
+    ))
+
   test('never calls the image endpoints, only /chat/completions', async () =>
     withMockedFetch(
       async (input) => {
@@ -141,7 +151,7 @@ describe('POST /enhance', () => {
       },
     ))
 
-  test('a transparent-background proposal on gpt-image-2 is rerouted to gpt-image-1.5', async () =>
+  test('a transparent-background proposal is corrected to opaque, not rerouted', async () =>
     withMockedFetch(
       async () =>
         chatCompletion({
@@ -151,9 +161,31 @@ describe('POST /enhance', () => {
       async () => {
         const res = await postEnhance({ brief: 'an app icon' })
         const parsed = planResponseSchema.parse(await res.json())
-        expect(parsed.settings.model).toBe('gpt-image-1.5')
-        expect(parsed.settings.background).toBe('transparent')
-        expect(parsed.assumptions.some((note) => note.includes('gpt-image-1.5'))).toBe(true)
+        expect(parsed.settings.model).toBe('gpt-image-2')
+        expect(parsed.settings.background).toBe('opaque')
+        expect(parsed.assumptions.some((note) => note.includes('alpha channel'))).toBe(true)
+      },
+    ))
+
+  /**
+   * The enhance model has the retired models in its training data and the
+   * playbook is edited independently of the gateway, so a stale proposal is a
+   * live failure mode — not a hypothetical. It must degrade to the default
+   * model rather than failing the plan, and the settings it returns must be
+   * runnable as-is.
+   */
+  test('a retired model proposal degrades to the generatable model instead of failing', async () =>
+    withMockedFetch(
+      async () =>
+        chatCompletion({
+          ...VALID_LLM_PLAN,
+          proposed_settings: { ...VALID_LLM_PLAN.proposed_settings, model: 'gpt-image-1.5' },
+        }),
+      async () => {
+        const res = await postEnhance({ brief: 'an app icon' })
+        expect(res.status).toBe(200)
+        const parsed = planResponseSchema.parse(await res.json())
+        expect(parsed.settings.model).toBe('gpt-image-2')
       },
     ))
 

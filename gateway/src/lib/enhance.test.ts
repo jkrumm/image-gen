@@ -229,7 +229,13 @@ describe('snapToNearestPreset', () => {
 })
 
 describe('resolveSettings (capability-matrix correction)', () => {
-  test('transparent background + gpt-image-2 proposal reroutes to gpt-image-1.5 and notes it', () => {
+  /**
+   * Was: "transparent background reroutes to gpt-image-1.5". There is no
+   * fallback model left, so the enhancer must instead hand back a *runnable*
+   * plan — opaque, with the correction surfaced — rather than settings
+   * `/generate` would immediately 400.
+   */
+  test('transparent background is forced to opaque and noted, not rerouted', () => {
     const { settings, notes } = resolveSettings({
       proposed: {
         model: 'gpt-image-2',
@@ -243,15 +249,16 @@ describe('resolveSettings (capability-matrix correction)', () => {
       overrides: undefined,
       hasReferences: false,
     })
-    expect(settings.model).toBe('gpt-image-1.5')
-    expect(notes.some((note) => note.includes('gpt-image-1.5'))).toBe(true)
+    expect(settings.model).toBe('gpt-image-2')
+    expect(settings.background).toBe('opaque')
+    expect(notes.some((note) => note.includes('alpha channel'))).toBe(true)
   })
 
-  test('invalid custom size on gpt-image-1.5 snaps to a preset and notes it', () => {
+  test('an invalid custom size snaps to the nearest preset and notes it', () => {
     const { settings, notes } = resolveSettings({
       proposed: {
-        model: 'gpt-image-1.5',
-        size: '1536x896',
+        model: 'gpt-image-2',
+        size: '1000x1000',
         quality: 'medium',
         background: 'opaque',
         n: 1,
@@ -261,7 +268,7 @@ describe('resolveSettings (capability-matrix correction)', () => {
       overrides: undefined,
       hasReferences: false,
     })
-    expect(settings.size).toBe('1536x1024')
+    expect(settings.size).toBe('1024x1024')
     expect(notes.some((note) => note.includes('snapped'))).toBe(true)
   })
 

@@ -9,6 +9,14 @@ APP_SOURCES := app/src app/src-tauri/src app/src-tauri/capabilities shared/src \
                app/index.html app/vite.config.ts \
                app/src-tauri/tauri.conf.json app/src-tauri/Cargo.toml
 
+# Read a secret without ever hanging. `secrets-run` (the age-encrypted offline cache) is the
+# headless path and fails fast when a ref is not seeded; plain `op` is the fallback for a signed-in
+# human. The timeout is load-bearing, not defensive padding: on the mini `op` blocks forever on a
+# biometric prompt nobody is there to approve, which turns any target that reads a secret into a
+# hang rather than an error. Callers get an empty string and decide what to say.
+#   usage: VALUE=$$($(call op_read,op://vault/item/field))
+op_read = secrets-run read $(1) 2>/dev/null || timeout 15 op read $(1) --account tkrumm </dev/null 2>/dev/null
+
 BUNDLE    := app/src-tauri/target/release/bundle/macos/ImageGen.app
 INSTALLED := /Applications/ImageGen.app
 STAMP     := $(INSTALLED)/Contents/Resources/.codesum
@@ -33,12 +41,15 @@ up: ## THE entrypoint: bring both halves to your working tree — build+install 
 	@echo "✓ both halves match your working tree"
 
 configure: ## Seed ~/Pictures/ImageGen/.imagegen/settings.json from 1Password so the app never asks for the token. Re-run after rotating it.
-	@BASE=$$(secrets-run read op://vps/image-gen-gateway/BASE_URL 2>/dev/null || op read op://vps/image-gen-gateway/BASE_URL --account tkrumm </dev/null 2>/dev/null); \
-	TOKEN=$$(secrets-run read op://vps/image-gen-gateway/API_SECRET 2>/dev/null || op read op://vps/image-gen-gateway/API_SECRET --account tkrumm </dev/null 2>/dev/null); \
+	@BASE=$$($(call op_read,op://vps/image-gen-gateway/BASE_URL)); \
+	TOKEN=$$($(call op_read,op://vps/image-gen-gateway/API_SECRET)); \
 	if [ -z "$$BASE" ] || [ -z "$$TOKEN" ]; then \
 	  echo "✗ could not read the gateway URL/token from 1Password."; \
-	  echo "  On the mini the refs must be in dotfiles-private/headless.refs + 'make secrets-seed';"; \
-	  echo "  otherwise sign in with 'op signin --account tkrumm' first."; \
+	  echo "  This machine is headless-by-default: plain 'op' blocks on a biometric prompt, so the"; \
+	  echo "  refs below need to be in dotfiles-private/headless.refs, then 'make secrets-seed':"; \
+	  echo "      op://vps/image-gen-gateway/BASE_URL"; \
+	  echo "      op://vps/image-gen-gateway/API_SECRET"; \
+	  echo "  (Or run 'op signin --account tkrumm' in this shell first, with someone present.)"; \
 	  exit 1; \
 	fi; \
 	mkdir -p "$(HOME)/Pictures/ImageGen/.imagegen"; \
@@ -97,14 +108,11 @@ app: ## Build the release bundle, install it to /Applications, prove it matches 
 	rm -rf "$(INSTALLED)"
 	cp -R "$(BUNDLE)" "$(INSTALLED)"
 	@bun scripts/codesum.ts $(APP_SOURCES) > "$(STAMP)"
-	@# ASSERT, don't nuke. There is deliberately no CLEAN=1 / `cargo clean` escape
-	@# hatch on this target: cargo and Vite both key their caches on content, so a
-	@# nuclear rebuild cannot buy correctness — it can only hide which of "the build
-	@# was stale" and "the build was fine and something else is wrong" you are
-	@# actually looking at. Instead we PROVE it: the fingerprint recorded inside the
-	@# installed bundle must equal a fresh fingerprint of the working tree. A
-	@# mismatch here means the tree was edited mid-build, so the .app you just
-	@# installed is already not what you have on disk.
+	@# ASSERT, don't nuke — this is the check that makes CLEAN=1 optional rather than
+	@# necessary (see the note at the top of this target). The fingerprint recorded
+	@# inside the installed bundle must equal a fresh fingerprint of the working tree.
+	@# A mismatch means the tree was edited mid-build, so the .app just installed is
+	@# already not what is on disk.
 	@$(MAKE) --no-print-directory app-status
 	@echo "✓ installed → $(INSTALLED)   (launch it: make app-run)"
 
@@ -180,7 +188,7 @@ gateway-status: ## Is the deployed gateway healthy, and is it running the image 
 	@# healthy container says nothing about WHICH code is healthy. (These comments live outside
 	@# the shell block below on purpose — that block is one backslash-continued command, so a
 	@# `#` inside it would comment out everything that follows.)
-	@BASE=$${IMAGE_GEN_BASE_URL:-$$(secrets-run read op://vps/image-gen-gateway/BASE_URL 2>/dev/null || op read op://vps/image-gen-gateway/BASE_URL --account tkrumm </dev/null 2>/dev/null)}; \
+	@BASE=$${IMAGE_GEN_BASE_URL:-$$($(call op_read,op://vps/image-gen-gateway/BASE_URL))}; \
 	if [ -z "$$BASE" ]; then echo "✗ set IMAGE_GEN_BASE_URL or seed op://vps/image-gen-gateway/BASE_URL"; exit 1; fi; \
 	printf "  verifying the deployed gateway matches your HEAD… "; \
 	HEALTH=$$(curl -sS --max-time 15 "$$BASE/health" 2>/dev/null); \
@@ -206,12 +214,12 @@ gateway-logs: ## Tail the deployed gateway's container logs (does not terminate 
 	ssh vps 'docker logs -f $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway")'
 
 gateway-smoke: ## Probe the deployed gateway: /health (unauthenticated) + an authenticated /enhance round trip.
-	@BASE=$${IMAGE_GEN_BASE_URL:-$$(secrets-run read op://vps/image-gen-gateway/BASE_URL 2>/dev/null || op read op://vps/image-gen-gateway/BASE_URL --account tkrumm </dev/null 2>/dev/null)}; \
+	@BASE=$${IMAGE_GEN_BASE_URL:-$$($(call op_read,op://vps/image-gen-gateway/BASE_URL))}; \
 	if [ -z "$$BASE" ]; then echo "✗ set IMAGE_GEN_BASE_URL=https://<host> or seed op://vps/image-gen-gateway/BASE_URL"; exit 1; fi; \
 	echo "  GET $$BASE/health"; \
 	curl -sS --max-time 10 "$$BASE/health" || { echo "✗ unreachable — the gateway is Tailscale-only, so check the tailnet first"; exit 1; }; \
 	echo ""; \
-	TOKEN=$$(secrets-run read op://vps/image-gen-gateway/API_SECRET 2>/dev/null || op read op://vps/image-gen-gateway/API_SECRET --account tkrumm </dev/null 2>/dev/null); \
+	TOKEN=$$($(call op_read,op://vps/image-gen-gateway/API_SECRET)); \
 	if [ -z "$$TOKEN" ]; then echo "⚠ no API_SECRET available — skipping the authenticated probe"; exit 0; fi; \
 	echo "  POST $$BASE/enhance"; \
 	curl -sS --max-time 60 -X POST "$$BASE/enhance" \

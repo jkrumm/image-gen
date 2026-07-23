@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help app app-run app-status app-logs dev check gateway-smoke
+.PHONY: help up configure app app-run app-status app-logs dev check \
+        gateway-deploy gateway-status gateway-smoke gateway-logs
 
 # The sources that determine what the built app IS. Anything listed here that
 # changes makes the installed app stale — see scripts/codesum.ts.
@@ -18,9 +19,52 @@ help: ## Show this help (default target — a bare `make` runs it)
 	@awk 'BEGIN {FS = ":.*##"; printf "\nimage-gen — run \033[36mmake <target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 	@echo ""
 
+##@ Both halves
+
+up: ## THE entrypoint: bring both halves to your working tree — build+install the Mac app, deploy the gateway — and prove each one. Terminates.
+	@echo "==> [1/2] Mac app"
+	@$(MAKE) --no-print-directory app
+	@echo ""
+	@echo "==> [2/2] Gateway"
+	@$(MAKE) --no-print-directory gateway-deploy
+	@echo ""
+	@$(MAKE) --no-print-directory app-status
+	@$(MAKE) --no-print-directory gateway-status
+	@echo "✓ both halves match your working tree"
+
+configure: ## Seed ~/Pictures/ImageGen/.imagegen/settings.json from 1Password so the app never asks for the token. Re-run after rotating it.
+	@BASE=$$(secrets-run read op://vps/image-gen-gateway/BASE_URL 2>/dev/null || op read op://vps/image-gen-gateway/BASE_URL --account tkrumm </dev/null 2>/dev/null); \
+	TOKEN=$$(secrets-run read op://vps/image-gen-gateway/API_SECRET 2>/dev/null || op read op://vps/image-gen-gateway/API_SECRET --account tkrumm </dev/null 2>/dev/null); \
+	if [ -z "$$BASE" ] || [ -z "$$TOKEN" ]; then \
+	  echo "✗ could not read the gateway URL/token from 1Password."; \
+	  echo "  On the mini the refs must be in dotfiles-private/headless.refs + 'make secrets-seed';"; \
+	  echo "  otherwise sign in with 'op signin --account tkrumm' first."; \
+	  exit 1; \
+	fi; \
+	mkdir -p "$(HOME)/Pictures/ImageGen/.imagegen"; \
+	umask 077; \
+	printf '{\n  "baseUrl": "%s",\n  "token": "%s"\n}\n' "$$BASE" "$$TOKEN" > "$(HOME)/Pictures/ImageGen/.imagegen/settings.json"; \
+	chmod 600 "$(HOME)/Pictures/ImageGen/.imagegen/settings.json"; \
+	echo "✓ wrote ~/Pictures/ImageGen/.imagegen/settings.json (chmod 600) — restart the app to pick it up"
+
 ##@ The Mac app — this is how you actually use ImageGen
 
-app: ## THE entrypoint: build the release bundle, install it to /Applications, prove it matches your working tree, then exit. Safe to re-run.
+app: ## Build the release bundle, install it to /Applications, prove it matches your working tree, then exit. CLEAN=1 discards the cargo cache first (see below).
+	@# On "rebuild without cache so it's surely clean": the fingerprint check at the end of this
+	@# target is a STRONGER guarantee than --no-cache, not a weaker one. A cacheless rebuild only
+	@# tells you the build was fresh; it cannot tell you the artifact in /Applications came from
+	@# the tree in front of you, which is the thing you actually want to know — and it cannot
+	@# distinguish "the cache was stale" from "the cache was fine and something else is wrong",
+	@# so pulling it lets you skip a diagnosis rather than complete one. Both cargo and Vite key
+	@# their caches on content hashes, so a changed file always rebuilds its unit.
+	@#
+	@# CLEAN=1 exists anyway, because "I want to rule the toolchain out" is a legitimate call to
+	@# make about a compiler you do not control. It costs a full cargo rebuild (~10 min vs ~70s),
+	@# so it is opt-in and the assertion below runs either way.
+	@if [ "$(CLEAN)" = "1" ]; then \
+	  echo "  CLEAN=1 — discarding the cargo cache (full rebuild, several minutes)"; \
+	  cd app/src-tauri && cargo clean; \
+	fi
 	cd app && bun run tauri build --bundles app
 	@# Guard the overwrite. /Applications is shared with every other app on the
 	@# machine and this target does `rm -rf` — so refuse unless what is already
@@ -105,14 +149,70 @@ check: ## format:check + lint + typecheck across all workspaces, then the full t
 
 ##@ Gateway
 
+gateway-deploy: ## Deploy gateway/ + shared/ to the VPS via RollHook and wait for the rollout to land.
+	@# RollHook builds from GitHub master, so anything uncommitted or unpushed simply is not in
+	@# the deploy. Say that up front rather than reporting success for someone else's code.
+	@if [ -n "$$(git status --porcelain -- gateway shared)" ]; then \
+	  echo "✗ gateway/ or shared/ has uncommitted changes — RollHook builds from GitHub master, so they would not be deployed."; \
+	  git status --short -- gateway shared | sed 's/^/    /'; \
+	  exit 1; \
+	fi
+	@if [ -n "$$(git log origin/master..master --oneline -- gateway shared)" ]; then \
+	  echo "✗ gateway/ or shared/ commits are not pushed — RollHook would build the previous state:"; \
+	  git log origin/master..master --oneline -- gateway shared | sed 's/^/    /'; \
+	  exit 1; \
+	fi
+	gh workflow run deploy.yml --repo jkrumm/image-gen --ref master
+	@printf "  waiting for the rollout… "
+	@sleep 5
+	@for i in $$(seq 1 60); do \
+	  STATUS=$$(gh run list --repo jkrumm/image-gen --limit 1 --json status,conclusion --jq '.[0].status + ":" + (.[0].conclusion // "")'); \
+	  case "$$STATUS" in \
+	    completed:success) echo "ok"; break;; \
+	    completed:*) echo "FAILED"; echo "✗ deploy failed — 'gh run view --repo jkrumm/image-gen --log-failed'"; exit 1;; \
+	  esac; \
+	  sleep 5; \
+	done
+
+gateway-status: ## Is the deployed gateway healthy, and is it running the image built from your HEAD?
+	@# Same idea as the app's fingerprint: the running image is tagged with the git SHA it was
+	@# built from, so comparing it to HEAD proves the deployed code is the code you have. A
+	@# healthy container says nothing about WHICH code is healthy. (These comments live outside
+	@# the shell block below on purpose — that block is one backslash-continued command, so a
+	@# `#` inside it would comment out everything that follows.)
+	@BASE=$${IMAGE_GEN_BASE_URL:-$$(secrets-run read op://vps/image-gen-gateway/BASE_URL 2>/dev/null || op read op://vps/image-gen-gateway/BASE_URL --account tkrumm </dev/null 2>/dev/null)}; \
+	if [ -z "$$BASE" ]; then echo "✗ set IMAGE_GEN_BASE_URL or seed op://vps/image-gen-gateway/BASE_URL"; exit 1; fi; \
+	printf "  verifying the deployed gateway matches your HEAD… "; \
+	HEALTH=$$(curl -sS --max-time 15 "$$BASE/health" 2>/dev/null); \
+	if [ "$$HEALTH" != '{"status":"ok"}' ]; then \
+	  echo "UNHEALTHY"; echo "✗ $$BASE/health returned: $$HEALTH"; exit 1; \
+	fi; \
+	RUNNING=$$(ssh vps 'docker inspect --format "{{.Config.Image}}" $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway") 2>/dev/null' 2>/dev/null | sed 's/.*://'); \
+	HEAD_SHA=$$(git rev-parse HEAD); \
+	if [ -z "$$RUNNING" ]; then \
+	  echo "UNKNOWN"; echo "⚠ healthy, but could not read the running image tag over ssh — deployed version unverified"; \
+	elif [ "$$RUNNING" = "$$HEAD_SHA" ]; then \
+	  echo "ok ($$(echo $$RUNNING | cut -c1-12))"; \
+	else \
+	  echo "MISMATCH"; \
+	  echo "✗ the gateway is serving an image built from a different commit than your HEAD."; \
+	  echo "    HEAD:     $$HEAD_SHA"; \
+	  echo "    deployed: $$RUNNING"; \
+	  echo "  Deploy with: make gateway-deploy"; \
+	  exit 1; \
+	fi
+
+gateway-logs: ## Tail the deployed gateway's container logs (does not terminate — Ctrl-C to stop)
+	ssh vps 'docker logs -f $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway")'
+
 gateway-smoke: ## Probe the deployed gateway: /health (unauthenticated) + an authenticated /enhance round trip.
-	@BASE=$${IMAGE_GEN_BASE_URL:-$$(secrets-run read op://vps/image-gen-gateway/BASE_URL 2>/dev/null)}; \
+	@BASE=$${IMAGE_GEN_BASE_URL:-$$(secrets-run read op://vps/image-gen-gateway/BASE_URL 2>/dev/null || op read op://vps/image-gen-gateway/BASE_URL --account tkrumm </dev/null 2>/dev/null)}; \
 	if [ -z "$$BASE" ]; then echo "✗ set IMAGE_GEN_BASE_URL=https://<host> or seed op://vps/image-gen-gateway/BASE_URL"; exit 1; fi; \
 	echo "  GET $$BASE/health"; \
 	curl -sS --max-time 10 "$$BASE/health" || { echo "✗ unreachable — the gateway is Tailscale-only, so check the tailnet first"; exit 1; }; \
 	echo ""; \
-	TOKEN=$$(secrets-run read op://vps/image-gen-gateway/API_SECRET 2>/dev/null); \
-	if [ -z "$$TOKEN" ]; then echo "⚠ no API_SECRET in the offline cache — skipping the authenticated probe"; exit 0; fi; \
+	TOKEN=$$(secrets-run read op://vps/image-gen-gateway/API_SECRET 2>/dev/null || op read op://vps/image-gen-gateway/API_SECRET --account tkrumm </dev/null 2>/dev/null); \
+	if [ -z "$$TOKEN" ]; then echo "⚠ no API_SECRET available — skipping the authenticated probe"; exit 0; fi; \
 	echo "  POST $$BASE/enhance"; \
 	curl -sS --max-time 60 -X POST "$$BASE/enhance" \
 	  -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" \

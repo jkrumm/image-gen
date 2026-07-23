@@ -4,11 +4,15 @@ import {
   errorResponseSchema,
   generateRequestSchema,
   generateResponseSchema,
+  planRequestSchema,
+  planResponseSchema,
   streamEventSchema,
   type EditRequestInput,
   type EditResponse,
   type GenerateRequestInput,
   type GenerateResponse,
+  type PlanRequestInput,
+  type PlanResponse,
 } from '@image-gen/shared'
 import { fetch } from '@tauri-apps/plugin-http'
 import type { Settings } from './settings'
@@ -41,8 +45,14 @@ async function gatewayFetch(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
-/** Parses a non-streaming JSON envelope, throwing the gateway's own error message on failure. */
-async function parseJsonEnvelope<T>(
+/**
+ * Parses a non-streaming JSON envelope, throwing the gateway's own error message on failure.
+ * Exported (alongside `handleFrame`/`consumeSseStream` below) purely so `gateway.test.ts` can
+ * drive the response-parsing logic directly against constructed `Response`/`ReadableStream`
+ * objects — it does not touch `@tauri-apps/plugin-http`, so this is testable without a Tauri
+ * runtime.
+ */
+export async function parseJsonEnvelope<T>(
   response: Response,
   schema: { parse: (data: unknown) => T },
 ): Promise<T> {
@@ -125,6 +135,35 @@ export async function edit(
   return parseJsonEnvelope(response, editResponseSchema)
 }
 
+/**
+ * Calls the `/enhance` v2 contract (`shared/src/plan.ts`) — turns a brief (or a
+ * `current_prompt` + `delta` iteration) into a crafted prompt, derived settings, policy
+ * warnings, and an estimated cost. Never generates an image; the caller reviews the plan,
+ * then calls `generate()`/`edit()` (or their streaming counterparts) with the returned
+ * settings. Parses the response through `planResponseSchema` rather than casting — the
+ * gateway is a separate process and a contract drift must fail loudly here.
+ */
+export async function plan(
+  settings: Settings,
+  input: PlanRequestInput,
+  signal?: AbortSignal,
+): Promise<PlanResponse> {
+  const body = planRequestSchema.parse(input)
+  const baseUrl = settings.baseUrl.replace(/\/+$/, '')
+
+  const response = await gatewayFetch(`${baseUrl}/enhance`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${settings.token}`,
+    },
+    body: JSON.stringify(body),
+    ...(signal ? { signal } : {}),
+  })
+
+  return parseJsonEnvelope(response, planResponseSchema)
+}
+
 export type StreamHandlers = {
   onPartial: (frame: {
     b64_json: string
@@ -171,7 +210,10 @@ async function readChunk(
  * Returns the final `GenerateResponse` once a `completed` frame arrives, `undefined`
  * for a `partial_image` frame (already dispatched to `onPartial`), or throws on `error`.
  */
-function handleFrame(rawFrame: string, handlers: StreamHandlers): GenerateResponse | undefined {
+export function handleFrame(
+  rawFrame: string,
+  handlers: StreamHandlers,
+): GenerateResponse | undefined {
   // SSE data fields may be split across multiple `data:` lines within one frame;
   // per spec these are rejoined with `\n`. The gateway emits single-line JSON, but
   // handle the general case rather than assuming that.
@@ -205,7 +247,7 @@ function handleFrame(rawFrame: string, handlers: StreamHandlers): GenerateRespon
  * response. Buffers raw bytes across chunk boundaries — a chunk may contain zero, one,
  * or many complete frames, and a frame may itself be split across chunks.
  */
-async function consumeSseStream(
+export async function consumeSseStream(
   response: Response,
   handlers: StreamHandlers,
 ): Promise<GenerateResponse> {

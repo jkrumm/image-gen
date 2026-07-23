@@ -1,5 +1,6 @@
-import type { GenerateRequestInput } from '@image-gen/shared'
+import type { GenerateRequestInput, GenerationParent } from '@image-gen/shared'
 import { ActionIcon, Group, ScrollArea, SegmentedControl, Stack, Text, Title } from '@mantine/core'
+import { EmptyState } from 'basalt-ui'
 import { Activity, useCallback, useEffect, useState } from 'react'
 import { QueueBar } from './components/QueueBar'
 import { SettingsModal } from './components/SettingsModal'
@@ -7,20 +8,31 @@ import type { Recipe } from './lib/imaging/recipe'
 import { listGenerations, type LibraryEntry } from './lib/library'
 import { QueueProvider } from './lib/queue'
 import { useSettings } from './lib/settings'
-import { Compose } from './views/Compose'
-import { Edit } from './views/Edit'
+import { Create } from './views/Create'
 import { Library } from './views/Library'
 import { Refine } from './views/Refine'
 
-export type ComposerSeed = {
+/**
+ * Seeds the Create surface from the Library (docs/implementation-plan.md G5, Task 2). Replaces the
+ * former `ComposerSeed`/`EditorSeed` split with one shape carrying an explicit `op` so Create knows
+ * *why* it was seeded rather than inferring it from which fields happen to be present:
+ *
+ * - `'tweak'` — reopen the Plan for editing (delta mode), from the Library's Tweak action or an
+ *   image's "Reuse prompt + settings" use-as action.
+ * - `'edit'` — "Use as edit reference": seeds the references rail with `references` *and* the
+ *   originating prompt/settings (previously lost — only `{ image, parentId }` traveled).
+ * - `'series'` — reserved for project-anchor seeding (concept §3); no UI path emits it yet.
+ *
+ * `references` is only meaningful for `'edit'`. `parent` carries the full lineage edge this seed
+ * should record on the resulting generation (`{ id, image?, op }`) — distinct from the request's
+ * own settings, since e.g. a Tweak's `parent.op` is always `'tweak'` even though the user may go
+ * on to submit as a plain generation or as an edit.
+ */
+export type CreateSeed = {
+  op: 'tweak' | 'edit' | 'series'
   request: GenerateRequestInput
-  parentId?: string
-}
-
-/** Seeds the Edit view with a reference image (e.g. from a past generation) and its lineage. */
-export type EditorSeed = {
-  image: File
-  parentId?: string
+  references?: File[]
+  parent?: GenerationParent
 }
 
 /** Seeds the Refine view with a past generation's first output image plus the generation id
@@ -33,12 +45,11 @@ export type RefineSeed = {
   recipe?: Recipe
 }
 
-type View = 'compose' | 'library' | 'edit' | 'refine'
+type View = 'create' | 'library' | 'styles' | 'refine'
 
 export function App() {
-  const [view, setView] = useState<View>('compose')
-  const [composerSeed, setComposerSeed] = useState<ComposerSeed | null>(null)
-  const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null)
+  const [view, setView] = useState<View>('create')
+  const [createSeed, setCreateSeed] = useState<CreateSeed | null>(null)
   const [refineSeed, setRefineSeed] = useState<RefineSeed | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settings] = useSettings()
@@ -55,14 +66,9 @@ export function App() {
 
   const totalCost = entries.reduce((sum, entry) => sum + (entry.metadata.cost.usd ?? 0), 0)
 
-  function seedComposer(seed: ComposerSeed): void {
-    setComposerSeed(seed)
-    setView('compose')
-  }
-
-  function seedEditor(seed: EditorSeed): void {
-    setEditorSeed(seed)
-    setView('edit')
+  function seedCreate(seed: CreateSeed): void {
+    setCreateSeed(seed)
+    setView('create')
   }
 
   function seedRefine(seed: RefineSeed): void {
@@ -85,10 +91,9 @@ export function App() {
               value={view}
               onChange={(value) => setView(value as View)}
               data={[
-                { label: 'Compose', value: 'compose' },
+                { label: 'Create', value: 'create' },
                 { label: 'Library', value: 'library' },
-                { label: 'Edit', value: 'edit' },
-                { label: 'Refine', value: 'refine' },
+                { label: 'Styles', value: 'styles' },
               ]}
             />
             <Text size="sm" c="dimmed">
@@ -110,20 +115,12 @@ export function App() {
             prompt, selected model/size, …) instead of resetting it on unmount. `mode="hidden"`
             renders the subtree with `display: none`, so the hidden `ScrollArea`s take no layout
             space and each view keeps its own independent scroll position. */}
-        <Activity mode={view === 'compose' ? 'visible' : 'hidden'}>
+        <Activity mode={view === 'create' ? 'visible' : 'hidden'}>
           <ScrollArea style={{ flex: 1 }} scrollbars="y">
-            <Compose
+            <Create
               settings={settings}
-              seed={composerSeed}
-              onOpenSettings={() => setSettingsOpen(true)}
-            />
-          </ScrollArea>
-        </Activity>
-        <Activity mode={view === 'edit' ? 'visible' : 'hidden'}>
-          <ScrollArea style={{ flex: 1 }} scrollbars="y">
-            <Edit
-              settings={settings}
-              seed={editorSeed}
+              createSeed={createSeed}
+              entries={entries}
               onOpenSettings={() => setSettingsOpen(true)}
             />
           </ScrollArea>
@@ -133,9 +130,17 @@ export function App() {
             <Library
               entries={entries}
               totalCost={totalCost}
-              onSeedComposer={seedComposer}
-              onSeedEditor={seedEditor}
+              onSeedCreate={seedCreate}
               onSeedRefine={seedRefine}
+              onLibraryChange={() => void refreshLibrary()}
+            />
+          </ScrollArea>
+        </Activity>
+        <Activity mode={view === 'styles' ? 'visible' : 'hidden'}>
+          <ScrollArea style={{ flex: 1 }} scrollbars="y">
+            <EmptyState
+              title="Styles"
+              description="Style guides (palette, vocabulary, reference images, proof renders) ship in a later wave. Distill one from a Library selection, a design.md, or a screenshot once it lands."
             />
           </ScrollArea>
         </Activity>

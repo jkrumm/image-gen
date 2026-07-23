@@ -11,7 +11,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { edit, generate, type EditFiles } from './gateway'
+import { edit, editStream, generate, generateStream, type EditFiles } from './gateway'
 import {
   saveEdit,
   saveGeneration,
@@ -21,6 +21,20 @@ import {
 import type { Settings } from './settings'
 
 export type JobStatus = 'running' | 'done' | 'error' | 'cancelled'
+
+/**
+ * Latest SSE partial-image frame for a streaming job, decoded straight into a data URL
+ * (`data:image/<format>;base64,...`) so callers can drop it into an `<img src>` with no
+ * further decoding. Best-effort progress only — upstream may deliver fewer partials than
+ * requested, so `index` must never be used to wait for a fixed count. Cleared once the
+ * job's `response` lands; never written to disk (only the final result is persisted, via
+ * the existing `saveGeneration`/`saveEdit` path).
+ */
+export type JobPreview = {
+  dataUrl: string
+  /** 0-based partial-frame counter as reported by the gateway. */
+  index: number
+}
 
 export type Job = {
   id: string
@@ -35,12 +49,60 @@ export type Job = {
   error?: string
   /** The gateway response, once the job completes successfully — drives result display. */
   response?: GenerateResponse | EditResponse
+  /** Latest streamed preview, present only while a streaming job is still running. */
+  preview?: JobPreview | undefined
+}
+
+/**
+ * Per-call streaming opt-out. Streaming is on by default whenever the effective `n` is 1
+ * (upstream hard constraint: "Streaming is only supported with n=1") — pass
+ * `{ stream: false }` to force the non-streaming path even for an `n === 1` request.
+ * `n > 1` always falls back to non-streaming regardless of this flag.
+ */
+export type EnqueueOptions = { stream?: boolean }
+
+/**
+ * Whether a job should take the streaming SSE path. Pure and exported for testing — the
+ * one rule that matters: streaming is an upstream hard constraint at `n=1`
+ * ("Streaming is only supported with n=1"), never a preference, so `n > 1` always wins
+ * over an opt-in `stream: true`.
+ */
+export function shouldStreamJob(n: number | undefined, streamRequested: boolean): boolean {
+  return streamRequested && (n ?? 1) === 1
+}
+
+/**
+ * The `partial_images` count to send when streaming: preserves a caller-specified
+ * positive count, otherwise defaults to 1 preview frame. Upstream may still deliver
+ * fewer partials than requested — this only sets the ceiling.
+ */
+export function effectivePartialImages(requested: number | undefined): number {
+  return requested && requested > 0 ? requested : 1
+}
+
+/** Decodes an SSE partial-image frame straight into an `<img src>`-ready data URL. */
+export function previewDataUrl(format: 'png' | 'webp' | 'jpeg', b64Json: string): string {
+  return `data:image/${format};base64,${b64Json}`
+}
+
+/**
+ * `EditRequestInput`'s `n`/`partial_images` are `z.coerce.number()` fields (the multipart
+ * wire format has no native number type), so their TS input type is `unknown` — mirror
+ * zod's own coercion here rather than asserting past it.
+ */
+function coerceNumber(value: unknown): number | undefined {
+  return value === undefined ? undefined : Number(value)
 }
 
 type QueueContextValue = {
   jobs: readonly Job[]
-  enqueueGenerate: (input: SaveGenerationRequest) => string
-  enqueueEdit: (input: SaveEditRequest, images: File[], mask?: File) => string
+  enqueueGenerate: (input: SaveGenerationRequest, options?: EnqueueOptions) => string
+  enqueueEdit: (
+    input: SaveEditRequest,
+    images: File[],
+    mask?: File,
+    options?: EnqueueOptions,
+  ) => string
   cancel: (id: string) => void
   dismiss: (id: string) => void
 }
@@ -75,13 +137,51 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
     setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
   }, [])
 
+  const onPartialFor = useCallback(
+    (id: string, controller: AbortController) =>
+      (frame: {
+        b64_json: string
+        format: 'png' | 'webp' | 'jpeg'
+        partial_image_index: number
+      }) => {
+        // A frame can race an already-settled abort (cancel fires between the last
+        // `read()` resolving and this callback running) — drop it rather than reviving
+        // a job the user just cancelled.
+        if (controller.signal.aborted) return
+        updateJob(id, {
+          preview: {
+            dataUrl: previewDataUrl(frame.format, frame.b64_json),
+            index: frame.partial_image_index,
+          },
+        })
+      },
+    [updateJob],
+  )
+
   const runGenerate = useCallback(
-    async (id: string, input: SaveGenerationRequest, controller: AbortController) => {
+    async (
+      id: string,
+      input: SaveGenerationRequest,
+      controller: AbortController,
+      stream: boolean,
+    ) => {
       try {
-        const response = await generate(settings, input, controller.signal)
+        const response = shouldStreamJob(input.n, stream)
+          ? await generateStream(
+              settings,
+              { ...input, partial_images: effectivePartialImages(input.partial_images) },
+              { onPartial: onPartialFor(id, controller), signal: controller.signal },
+            )
+          : await generate(settings, { ...input, partial_images: 0 }, controller.signal)
         if (controller.signal.aborted) return
         const metadata = await saveGeneration(response, input)
-        updateJob(id, { status: 'done', finishedAt: Date.now(), savedId: metadata.id, response })
+        updateJob(id, {
+          status: 'done',
+          finishedAt: Date.now(),
+          savedId: metadata.id,
+          response,
+          preview: undefined,
+        })
         notifications.show({
           color: 'green',
           title: 'Generation saved',
@@ -92,22 +192,49 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
         if (controller.signal.aborted) return
         const message = error instanceof Error ? error.message : String(error)
         void logError(`generation failed: ${message}`)
-        updateJob(id, { status: 'error', finishedAt: Date.now(), error: message })
+        updateJob(id, {
+          status: 'error',
+          finishedAt: Date.now(),
+          error: message,
+          preview: undefined,
+        })
         notifications.show({ color: 'red', title: 'Generation failed', message })
       } finally {
         controllersRef.current.delete(id)
       }
     },
-    [settings, onSaved, updateJob],
+    [settings, onSaved, updateJob, onPartialFor],
   )
 
   const runEdit = useCallback(
-    async (id: string, input: SaveEditRequest, files: EditFiles, controller: AbortController) => {
+    async (
+      id: string,
+      input: SaveEditRequest,
+      files: EditFiles,
+      controller: AbortController,
+      stream: boolean,
+    ) => {
       try {
-        const response = await edit(settings, input, files, controller.signal)
+        const response = shouldStreamJob(coerceNumber(input.n), stream)
+          ? await editStream(
+              settings,
+              {
+                ...input,
+                partial_images: effectivePartialImages(coerceNumber(input.partial_images)),
+              },
+              files,
+              { onPartial: onPartialFor(id, controller), signal: controller.signal },
+            )
+          : await edit(settings, { ...input, partial_images: 0 }, files, controller.signal)
         if (controller.signal.aborted) return
         const metadata = await saveEdit(response, input, files)
-        updateJob(id, { status: 'done', finishedAt: Date.now(), savedId: metadata.id, response })
+        updateJob(id, {
+          status: 'done',
+          finishedAt: Date.now(),
+          savedId: metadata.id,
+          response,
+          preview: undefined,
+        })
         notifications.show({
           color: 'green',
           title: 'Edit saved',
@@ -118,17 +245,22 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
         if (controller.signal.aborted) return
         const message = error instanceof Error ? error.message : String(error)
         void logError(`edit failed: ${message}`)
-        updateJob(id, { status: 'error', finishedAt: Date.now(), error: message })
+        updateJob(id, {
+          status: 'error',
+          finishedAt: Date.now(),
+          error: message,
+          preview: undefined,
+        })
         notifications.show({ color: 'red', title: 'Edit failed', message })
       } finally {
         controllersRef.current.delete(id)
       }
     },
-    [settings, onSaved, updateJob],
+    [settings, onSaved, updateJob, onPartialFor],
   )
 
   const enqueueGenerate = useCallback(
-    (input: SaveGenerationRequest): string => {
+    (input: SaveGenerationRequest, options?: EnqueueOptions): string => {
       const id = crypto.randomUUID()
       const controller = new AbortController()
       controllersRef.current.set(id, controller)
@@ -142,14 +274,14 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
           startedAt: Date.now(),
         },
       ])
-      void runGenerate(id, input, controller)
+      void runGenerate(id, input, controller, options?.stream ?? true)
       return id
     },
     [runGenerate],
   )
 
   const enqueueEdit = useCallback(
-    (input: SaveEditRequest, images: File[], mask?: File): string => {
+    (input: SaveEditRequest, images: File[], mask?: File, options?: EnqueueOptions): string => {
       const id = crypto.randomUUID()
       const controller = new AbortController()
       controllersRef.current.set(id, controller)
@@ -164,7 +296,7 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
           startedAt: Date.now(),
         },
       ])
-      void runEdit(id, input, files, controller)
+      void runEdit(id, input, files, controller, options?.stream ?? true)
       return id
     },
     [runEdit],

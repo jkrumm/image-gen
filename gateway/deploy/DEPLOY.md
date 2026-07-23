@@ -1,11 +1,17 @@
 # Deploying image-gen-gateway to the VPS
 
-Ingress is **Tailscale-only** — a grey-cloud DNS-only A record (`image.<your-domain>` → the VPS
+Ingress is **Tailscale-only** — a grey-cloud DNS-only A record (`image-gateway.<your-domain>` → the VPS
 Tailscale IP) routed to **Traefik**, _not_ through the Cloudflare Tunnel (same pattern as `argo`,
 `audio-gateway`, and `research-gateway`). Deploys are **label-driven via rollhook** (OIDC,
 zero-downtime). The app repo ships only the code, `Dockerfile`, and the
 `.github/workflows/deploy.yml` trigger. The compose file, the prod `.env`, and the Cloudflare DNS
 record live in the **`vps`** repo + the Cloudflare dashboard.
+
+The hostname is `image-gateway`, not `image`. The zone already serves an unrelated image CDN at
+`img.<your-domain>` (plus its `img-origin.<your-domain>`), and a bare `image.<your-domain>` sitting
+next to those is a name you have to think about every time you read it. The `-gateway` suffix says
+which system it belongs to. (The zone is not otherwise consistent about this — `audio-gateway` has
+the suffix, `research` does not — so follow the disambiguation, not a convention.)
 
 ## 1. Create the 1Password item
 
@@ -46,7 +52,7 @@ defense-in-depth on top.
 Add the DNS record exactly like `research.<your-domain>` / `audio-gateway.<your-domain>` (via the
 `/cloudflare` skill or the dashboard):
 
-- `image.<your-domain>` → **A record, DNS-only (grey cloud, `proxied:false`)** → the VPS
+- `image-gateway.<your-domain>` → **A record, DNS-only (grey cloud, `proxied:false`)** → the VPS
   Tailscale IP (`op://vps/config/VPS_TAILSCALE_IP`).
 
 **Do NOT** add it to the cloudflared tunnel ingress. Traefik's `:443` is already bound to the
@@ -71,7 +77,7 @@ and `dockerfile: gateway/Dockerfile`, as `.github/workflows/deploy.yml` does.
 
 ```bash
 TOKEN=$(op read "op://vps/image-gen-gateway/API_SECRET" --account tkrumm)
-BASE=https://image.<your-domain>
+BASE=https://image-gateway.<your-domain>
 
 curl -sS "$BASE/health"   # {"status":"ok"} — tailnet-only
 

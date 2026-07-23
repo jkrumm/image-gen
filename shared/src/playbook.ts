@@ -9,7 +9,7 @@ export { PLAYBOOK }
  * generation's doctrine version is always attributable. Integer string, no
  * semver (docs/concept.md §9 / user story #12).
  */
-export const PLAYBOOK_VERSION = '1'
+export const PLAYBOOK_VERSION = '4'
 
 const CORE_SECTIONS = ['core', 'settings', 'policy'] as const
 

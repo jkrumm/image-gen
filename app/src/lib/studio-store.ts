@@ -29,6 +29,7 @@ const ROOT = 'ImageGen/.imagegen'
 const PROJECTS_DIR = `${ROOT}/projects`
 const STYLES_DIR = `${ROOT}/styles`
 const CREATE_DRAFT_PATH = `${ROOT}/drafts/create.json`
+const SETTINGS_PATH = `${ROOT}/settings.json`
 
 type DirEntry = { name: string; isDirectory: boolean; isFile: boolean }
 
@@ -88,6 +89,9 @@ export type StudioStore = {
    * sketch, not this module's contract); callers validate what they get back themselves. */
   readCreateDraft: () => Promise<unknown | undefined>
   writeCreateDraft: (draft: unknown) => Promise<void>
+  /** Gateway connection settings. Opaque here — `settings.ts` owns the shape and validates. */
+  readSettings: () => Promise<unknown | undefined>
+  writeSettings: (settings: unknown) => Promise<void>
 }
 
 export function createStudioStore(fs: StudioFs = tauriFs): StudioStore {
@@ -164,6 +168,14 @@ export function createStudioStore(fs: StudioFs = tauriFs): StudioStore {
     await writeJson(fs, CREATE_DRAFT_PATH, draft)
   }
 
+  async function readSettings(): Promise<unknown | undefined> {
+    return readJson(fs, SETTINGS_PATH)
+  }
+
+  async function writeSettings(settings: unknown): Promise<void> {
+    await writeJson(fs, SETTINGS_PATH, settings)
+  }
+
   return {
     listProjects,
     readProject,
@@ -173,6 +185,8 @@ export function createStudioStore(fs: StudioFs = tauriFs): StudioStore {
     saveStyleGuide,
     readCreateDraft,
     writeCreateDraft,
+    readSettings,
+    writeSettings,
   }
 }
 

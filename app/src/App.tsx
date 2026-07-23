@@ -7,7 +7,7 @@ import { SettingsModal } from './components/SettingsModal'
 import type { Recipe } from './lib/imaging/recipe'
 import { listGenerations, type LibraryEntry } from './lib/library'
 import { QueueProvider } from './lib/queue'
-import { useSettings } from './lib/settings'
+import { loadStoredSettings, useSettings } from './lib/settings'
 import { Create } from './views/Create'
 import { Library } from './views/Library'
 import { Refine } from './views/Refine'
@@ -52,8 +52,19 @@ export function App() {
   const [createSeed, setCreateSeed] = useState<CreateSeed | null>(null)
   const [refineSeed, setRefineSeed] = useState<RefineSeed | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settings] = useSettings()
+  const [settings, setSettings] = useSettings()
   const [entries, setEntries] = useState<LibraryEntry[]>([])
+
+  // Hydrate from `.imagegen/settings.json` on boot. localStorage is partitioned per executable
+  // (dev vs bundled — see settings.ts), and the file may have been seeded by `make configure`
+  // without the app ever running, so the file wins whenever it holds a usable pair.
+  useEffect(() => {
+    async function hydrate(): Promise<void> {
+      const stored = await loadStoredSettings()
+      if (stored !== undefined) setSettings(stored)
+    }
+    void hydrate()
+  }, [setSettings])
 
   const refreshLibrary = useCallback(async () => {
     const next = await listGenerations()

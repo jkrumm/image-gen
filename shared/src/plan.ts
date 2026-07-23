@@ -185,5 +185,6 @@ export const planResponseSchema = z.object({
   warnings: z.array(planWarningSchema).default([]),
   mode_applied: z.enum(PLAN_MODES),
   playbook_version: z.string(),
+  enhance_model: z.string(),
 })
 export type PlanResponse = z.infer<typeof planResponseSchema>

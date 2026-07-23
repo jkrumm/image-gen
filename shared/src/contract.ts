@@ -1,22 +1,39 @@
 import { z } from 'zod'
 
-export const IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1-mini'] as const
+/**
+ * Every model that may appear in a historical sidecar or usage record. NEVER
+ * remove an entry — `listGenerations()` (app) silently skips sidecars that
+ * fail to parse, so dropping a value here makes existing library entries
+ * vanish instead of erroring. Use this for anything that validates
+ * stored/historical data.
+ */
+export const KNOWN_IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1-mini'] as const
+export type KnownImageModel = (typeof KNOWN_IMAGE_MODELS)[number]
+
+/**
+ * Models the studio will generate with today. Safe to shrink — retiring a
+ * model from generation only ever removes it from here, never from
+ * `KNOWN_IMAGE_MODELS`. Use this for anything that validates a new request or
+ * describes a response to one.
+ */
+export const IMAGE_MODELS = ['gpt-image-2'] as const
 export type ImageModel = (typeof IMAGE_MODELS)[number]
 
 export const DEFAULT_MODEL: ImageModel = 'gpt-image-2'
-export const TRANSPARENCY_MODEL: ImageModel = 'gpt-image-1.5'
 
 /**
  * Per-model capabilities, verified by live probe against the upstream endpoint
  * (2026-07-16 — see docs/research/endpoint-verification.md). These are model
  * properties, not endpoint properties: each holds identically on
- * `/images/generations` and `/images/edits`.
+ * `/images/generations` and `/images/edits`. Keyed by `KnownImageModel` (not
+ * `ImageModel`) because the app still renders capability-derived info for
+ * historical generations and replay must know what a legacy model supported.
  */
 export const MODEL_CAPABILITIES = {
   'gpt-image-2': {
     /** Accepts arbitrary `WxH` within GPT_IMAGE_2_SIZE; others take presets only. */
     customSize: true,
-    /** gpt-image-2 rejects `background: "transparent"` — it is the reason TRANSPARENCY_MODEL exists. */
+    /** gpt-image-2 rejects `background: "transparent"` outright — no generatable model supports it. */
     transparentBackground: false,
     /** gpt-image-2 is locked to high fidelity and 400s if `input_fidelity` is sent at all. */
     inputFidelity: false,
@@ -32,7 +49,7 @@ export const MODEL_CAPABILITIES = {
     inputFidelity: false,
   },
 } as const satisfies Record<
-  ImageModel,
+  KnownImageModel,
   {
     customSize: boolean
     transparentBackground: boolean
@@ -160,9 +177,17 @@ export type GeneratedImage = z.infer<typeof generatedImageSchema>
 export const generateResponseSchema = z.object({
   id: z.string(),
   created: z.number(),
-  /** Model actually used after routing. */
+  /**
+   * Model actually used after routing. `IMAGE_MODELS`, not
+   * `KNOWN_IMAGE_MODELS`: this describes a run that just happened, and a run
+   * can only ever happen on a model this build can still generate with.
+   */
   model: z.enum(IMAGE_MODELS),
-  /** Model the client asked for. */
+  /**
+   * Model the client asked for. Also `IMAGE_MODELS`: the request schema above
+   * only accepts a currently-generatable model (or `auto`), so nothing else
+   * can reach this field on a fresh response.
+   */
   requested_model: z.enum([...IMAGE_MODELS, 'auto'] as const),
   /** True when the gateway overrode the requested model. */
   routed: z.boolean(),

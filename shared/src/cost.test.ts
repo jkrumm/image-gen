@@ -110,6 +110,56 @@ describe('estimateCost', () => {
     })
     expect(mini.per_image_usd).toBeLessThan(gptImage2.per_image_usd)
   })
+
+  test('gpt-image-2 low 1024x1024 n=4 non-streaming is close to the measured total', () => {
+    // Measured live: 4 images, quality low, 1024x1024, non-streaming, opaque
+    // => total cost $0.02625. The estimator ignores input tokens, so it
+    // targets the output-only figure: 196 * 4 tokens @ $30/M = $0.02352.
+    const cost = estimateCost({
+      model: 'gpt-image-2',
+      quality: 'low',
+      size: '1024x1024',
+      streaming: false,
+      n: 4,
+    })
+    expect(cost.total_usd).toBeCloseTo(0.0235, 3)
+  })
+
+  test('gpt-image-1.5 low 1024x1024 n=4 non-streaming reflects the measured per-model anchor', () => {
+    // Measured live: 4 images, quality low, 1024x1024, non-streaming,
+    // transparent => total cost $0.057764, usage.output_tokens: 1717
+    // (~429/image). The estimator targets 429 * 4 tokens @ $32/M = $0.05491,
+    // materially closer to the measured total than the old shared-anchor
+    // estimate of ~$0.0251 would have been.
+    const cost = estimateCost({
+      model: 'gpt-image-1.5',
+      quality: 'low',
+      size: '1024x1024',
+      streaming: false,
+      n: 4,
+    })
+    expect(cost.total_usd).toBeCloseTo(0.0549, 3)
+  })
+
+  test('gpt-image-1.5 low anchor is strictly greater than gpt-image-2 low anchor', () => {
+    // Regression guard: the two models must never collapse back into one
+    // shared token-anchor table.
+    const gptImage15 = estimateCost({
+      model: 'gpt-image-1.5',
+      quality: 'low',
+      size: '1024x1024',
+      streaming: false,
+      n: 1,
+    })
+    const gptImage2 = estimateCost({
+      model: 'gpt-image-2',
+      quality: 'low',
+      size: '1024x1024',
+      streaming: false,
+      n: 1,
+    })
+    expect(gptImage15.per_image_usd).toBeGreaterThan(gptImage2.per_image_usd)
+  })
 })
 
 describe('sizeToPixels', () => {

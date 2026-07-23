@@ -3,10 +3,16 @@ import {
   costSchema,
   editRequestSchema,
   generateRequestSchema,
-  IMAGE_MODELS,
+  KNOWN_IMAGE_MODELS,
   usageSchema,
 } from './contract.js'
-import { INTENTS, PLAN_MODES, PLAN_WARNING_SEVERITIES, promptFragmentSchema } from './plan.js'
+import {
+  INTENTS,
+  PLAN_MODES,
+  PLAN_WARNING_SEVERITIES,
+  planAdditionSchema,
+  promptFragmentSchema,
+} from './plan.js'
 
 /**
  * Sidecar schema 2 — see docs/concept.md §6. Additive over app/src/lib/
@@ -73,18 +79,21 @@ export const generationImageV2Schema = baseImageRefSchema.extend({
 })
 export type GenerationImageV2 = z.infer<typeof generationImageV2Schema>
 
+/**
+ * Lineage back-pointer. Only `id` is guaranteed.
+ *
+ * concept §6 sketches the fully-known case (`{ id, image, op }`), but no real record carries it:
+ * every sidecar probed on disk (2026-07-19) has only a flat `parent_id` string, and the app's
+ * current save paths know the parent id without knowing which output image was used or, for a
+ * plain re-run, which op produced it. `image`/`op` are therefore optional — recorded when the
+ * caller genuinely knows them, omitted rather than guessed when it doesn't.
+ */
 export const generationParentSchema = z.object({
   id: z.string(),
-  image: z.string(),
-  op: z.enum(PARENT_OPS),
+  image: z.string().optional(),
+  op: z.enum(PARENT_OPS).optional(),
 })
 export type GenerationParent = z.infer<typeof generationParentSchema>
-
-export const planAssumptionRecordSchema = z.object({
-  slot: z.string(),
-  text: z.string(),
-})
-export type PlanAssumptionRecord = z.infer<typeof planAssumptionRecordSchema>
 
 export const planWarningRecordSchema = z.object({
   code: z.string(),
@@ -105,7 +114,10 @@ export const sidecarEnhanceSchema = z.object({
   mode_applied: z.enum(PLAN_MODES),
   plan_prompt: z.string(),
   final_prompt_edited: z.boolean(),
-  assumptions: z.array(planAssumptionRecordSchema).default([]),
+  /** Gap-fills the enhancer made, mirroring the `/enhance` response's `additions` shape. */
+  additions: z.array(planAdditionSchema).default([]),
+  /** Free-text notes on what the enhancer assumed or corrected — mirrors the response's `assumptions`. */
+  assumptions: z.array(z.string()).default([]),
   warnings: z.array(planWarningRecordSchema).default([]),
   series_context_ids: z.array(z.string()).default([]),
   playbook_version: z.string(),
@@ -127,8 +139,13 @@ export const generationMetadataV2Schema = z.object({
   created_at: z.string(),
   kind: z.enum(GENERATION_KINDS).default('generate'),
   prompt: z.string(),
-  requested_model: z.enum([...IMAGE_MODELS, 'auto'] as const),
-  model: z.enum(IMAGE_MODELS),
+  /**
+   * `KNOWN_IMAGE_MODELS`, not `IMAGE_MODELS`: this is historical data, and
+   * `listGenerations()` (app) silently skips sidecars that fail to parse, so
+   * a retired model (e.g. gpt-image-1.5) must stay parseable here forever.
+   */
+  requested_model: z.enum([...KNOWN_IMAGE_MODELS, 'auto'] as const),
+  model: z.enum(KNOWN_IMAGE_MODELS),
   routed: z.boolean(),
   routing_reason: z.string().optional(),
   params: generationParamsSchema,

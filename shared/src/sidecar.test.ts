@@ -43,6 +43,19 @@ describe('generationMetadataV2Schema', () => {
     expect(result.success).toBe(false)
   })
 
+  // Every sidecar that actually exists on disk carries only a flat `parent_id` string, so the
+  // migrated `parent` has an id and nothing else. Requiring `image`/`op` here would reject the
+  // real data while accepting only the idealized concept-doc sample.
+  test('accepts a parent with only an id (image/op unknown)', () => {
+    const result = generationMetadataV2Schema.parse({
+      ...baseGeneration,
+      parent: { id: '2026-07-10_090000' },
+    })
+    expect(result.parent?.id).toBe('2026-07-10_090000')
+    expect(result.parent?.image).toBeUndefined()
+    expect(result.parent?.op).toBeUndefined()
+  })
+
   test('accepts kind: import and a full parent/lineage record', () => {
     const result = generationMetadataV2Schema.parse({
       ...baseGeneration,
@@ -59,7 +72,8 @@ describe('generationMetadataV2Schema', () => {
         mode_applied: 'full',
         plan_prompt: 'a lighthouse at dusk, oil painting',
         final_prompt_edited: false,
-        assumptions: [{ slot: 'lighting', text: 'golden hour' }],
+        additions: [{ slot: 'lighting', text: 'golden hour' }],
+        assumptions: ['assumed dusk mood', 'corrected "lighthouse" spelling'],
         warnings: [{ code: 'restraint_terms', severity: 'warn', action: 'dismissed' }],
         series_context_ids: ['2026-06-01_100000'],
         playbook_version: '1',
@@ -70,6 +84,34 @@ describe('generationMetadataV2Schema', () => {
     expect(result.parent?.op).toBe('edit')
     expect(result.images[0]?.roles).toEqual(['final', 'icon'])
     expect(result.enhance?.intent).toBe('painterly')
+    expect(result.enhance?.additions).toEqual([{ slot: 'lighting', text: 'golden hour' }])
+    expect(result.enhance?.assumptions).toEqual([
+      'assumed dusk mood',
+      'corrected "lighthouse" spelling',
+    ])
+  })
+
+  test('accepts an enhance record with no additions/assumptions (both default to [])', () => {
+    const result = generationMetadataV2Schema.parse({
+      ...baseGeneration,
+      enhance: {
+        brief: 'a lighthouse at dusk',
+        intent: 'painterly',
+        mode_applied: 'full',
+        plan_prompt: 'a lighthouse at dusk, oil painting',
+        final_prompt_edited: false,
+        playbook_version: '1',
+        enhance_model: 'gpt-5.6',
+      },
+    })
+    expect(result.enhance?.additions).toEqual([])
+    expect(result.enhance?.assumptions).toEqual([])
+    expect(result.enhance?.warnings).toEqual([])
+  })
+
+  test('parses a generation with no enhance block at all (raw mode / no plan run)', () => {
+    const result = generationMetadataV2Schema.parse(baseGeneration)
+    expect(result.enhance).toBeUndefined()
   })
 
   test('rejects an invalid role', () => {
@@ -78,6 +120,60 @@ describe('generationMetadataV2Schema', () => {
       images: [{ filename: 'image-1.png', format: 'png', roles: ['not-a-role'] }],
     })
     expect(result.success).toBe(false)
+  })
+
+  // Regression coverage: retiring a model from generation (IMAGE_MODELS) must
+  // never make it unparseable as historical data (KNOWN_IMAGE_MODELS) —
+  // listGenerations() (app) silently skips sidecars that fail to parse, so a
+  // dropped enum value here makes real library entries vanish from the UI.
+  describe('retired-model regression coverage', () => {
+    test('still parses a sidecar recorded against the retired gpt-image-1.5', () => {
+      const result = generationMetadataV2Schema.parse({
+        ...baseGeneration,
+        requested_model: 'gpt-image-1.5',
+        model: 'gpt-image-1.5',
+      })
+      expect(result.model).toBe('gpt-image-1.5')
+      expect(result.requested_model).toBe('gpt-image-1.5')
+    })
+
+    test('still parses a sidecar recorded against the retired gpt-image-1-mini', () => {
+      const result = generationMetadataV2Schema.parse({
+        ...baseGeneration,
+        requested_model: 'gpt-image-1-mini',
+        model: 'gpt-image-1-mini',
+      })
+      expect(result.model).toBe('gpt-image-1-mini')
+      expect(result.requested_model).toBe('gpt-image-1-mini')
+    })
+
+    test('still parses a requested_model of "auto" alongside a retired resolved model', () => {
+      const result = generationMetadataV2Schema.parse({
+        ...baseGeneration,
+        requested_model: 'auto',
+        model: 'gpt-image-1.5',
+      })
+      expect(result.requested_model).toBe('auto')
+      expect(result.model).toBe('gpt-image-1.5')
+    })
+
+    test('still parses a sidecar with params.background: "transparent" (native alpha, gpt-image-1.5/-mini only)', () => {
+      const result = generationMetadataV2Schema.parse({
+        ...baseGeneration,
+        model: 'gpt-image-1.5',
+        requested_model: 'gpt-image-1.5',
+        params: { ...baseGeneration.params, background: 'transparent' },
+      })
+      expect(result.params.background).toBe('transparent')
+    })
+
+    test('rejects a model value that was never real (typo / not in KNOWN_IMAGE_MODELS)', () => {
+      const result = generationMetadataV2Schema.safeParse({
+        ...baseGeneration,
+        model: 'gpt-image-3-does-not-exist',
+      })
+      expect(result.success).toBe(false)
+    })
   })
 })
 

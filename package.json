@@ -8,8 +8,8 @@
     "test": "bun run --filter '*' test",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "format": "oxfmt 'shared/**' 'gateway/**' 'app/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --write",
-    "format:check": "oxfmt 'shared/**' 'gateway/**' 'app/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --check",
+    "format": "oxfmt 'shared/**' 'gateway/**' 'app/**' 'scripts/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --write",
+    "format:check": "oxfmt 'shared/**' 'gateway/**' 'app/**' 'scripts/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --check",
     "pre": "bun run format:check && bun run lint && bun run typecheck"
   },
   "workspaces": [

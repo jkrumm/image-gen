@@ -1,36 +1,31 @@
 import {
-  costSchema,
-  editRequestSchema,
-  generateRequestSchema,
-  IMAGE_MODELS,
-  usageSchema,
+  generationImageV2Schema,
+  generationMetadataV2Schema,
+  generationParamsSchema,
+  type GenerationParams,
 } from '@image-gen/shared'
 import { z } from 'zod'
 import { recipeSchema } from './imaging/recipe'
 
-// Reuse the gateway contract's own field schemas (quality/background/output_format/moderation)
-// instead of re-declaring parallel enums here — keeps a re-run's reconstructed request in sync
-// with the contract by construction, no manual `as` casts at the call site.
-export const generationParamsSchema = z.object({
-  size: z.string(),
-  // quality/background mirror the gateway RESPONSE (a plain resolved string, contract.ts keeps
-  // these loose since routing may resolve them beyond the request-time enum) — not the request enum.
-  quality: z.string(),
-  background: z.string(),
-  output_format: generateRequestSchema.shape.output_format,
-  output_compression: generateRequestSchema.shape.output_compression,
-  n: generateRequestSchema.shape.n,
-  moderation: generateRequestSchema.shape.moderation,
-  // Edit-only — only meaningful for models where MODEL_CAPABILITIES.inputFidelity is true.
-  input_fidelity: editRequestSchema.shape.input_fidelity,
-})
-export type GenerationParams = z.infer<typeof generationParamsSchema>
+/**
+ * The schema-2 sidecar shape (params, per-image roles/starred, parent/lineage, project_ids,
+ * style_guide_ids, the accepted `enhance` record, `moderation_outcome`) is built once in
+ * `shared/src/sidecar.ts` — the gateway needs the same shapes for `/enhance` responses and style
+ * guides, so this file extends that schema rather than re-declaring it in parallel. Only
+ * `derivatives` (Refine's baked exports, typed against app/src/lib/imaging/recipe.ts, which
+ * `shared` cannot depend on) is added locally.
+ */
+export { generationParamsSchema }
+export type { GenerationParams }
 
-export const generationImageMetaSchema = z.object({
-  filename: z.string(),
-  format: z.enum(['png', 'webp', 'jpeg']),
-})
-export type GenerationImageMeta = z.infer<typeof generationImageMetaSchema>
+/**
+ * Kept for existing call sites (library.ts's write helpers, Library.tsx's read helpers) that
+ * predate schema 2's split between `images[]` (curated, has roles/starred) and `input_images`/
+ * `mask` (bare refs, no roles/starred). The *input* type — roles/starred optional, since they're
+ * defaulted — covers all three shapes at write time, before `.parse()` fills the defaults in.
+ */
+export const generationImageMetaSchema = generationImageV2Schema
+export type GenerationImageMeta = z.input<typeof generationImageMetaSchema>
 
 /**
  * One baked PNG written by the Refine workbench to `<id>/derived/<path>.png` (e.g.
@@ -54,33 +49,49 @@ export const generationDerivativeSchema = z.object({
 })
 export type GenerationDerivative = z.infer<typeof generationDerivativeSchema>
 
-/** Sidecar written alongside every generation's images at `~/Pictures/ImageGen/<id>/metadata.json`. */
-export const generationMetadataSchema = z.object({
-  id: z.string(),
-  created_at: z.string(),
-  // Defaults to "generate" so sidecars written before this field existed still parse —
-  // listGenerations() silently skips invalid sidecars, so a breaking change here would
-  // hide entries from the user's library rather than error loudly.
-  kind: z.enum(['generate', 'edit']).default('generate'),
-  prompt: z.string(),
-  requested_model: z.enum([...IMAGE_MODELS, 'auto'] as const),
-  model: z.enum(IMAGE_MODELS),
-  routed: z.boolean(),
-  routing_reason: z.string().optional(),
-  params: generationParamsSchema,
-  images: z.array(generationImageMetaSchema),
-  /** Input images saved alongside an edit (`input-1.<ext>`, `input-2.<ext>`, …). */
-  input_images: z.array(generationImageMetaSchema).optional(),
-  /** Mask saved alongside an edit (`mask.png`), when one was supplied. */
-  mask: generationImageMetaSchema.optional(),
+/** Sidecar written alongside every generation's images at `~/Pictures/ImageGen/<id>/metadata.json`,
+ * schema 2 (docs/concept.md §6). */
+export const generationMetadataSchema = generationMetadataV2Schema.extend({
   /** Baked exports written by the Refine workbench (macOS iconset, favicon set, single PNG, …).
-   * Optional so sidecars written before Refine existed keep parsing. */
+   * Optional so sidecars written before Refine existed keep parsing. App-local — not part of the
+   * shared contract (see the module comment above). */
   derivatives: z.array(generationDerivativeSchema).optional(),
-  usage: usageSchema,
-  cost: costSchema,
-  latency_ms: z.number(),
-  /** Id of the generation this one was re-run/tweaked from, for lineage. */
-  parent_id: z.string().optional(),
-  gateway_version: z.string().optional(),
 })
 export type GenerationMetadata = z.infer<typeof generationMetadataSchema>
+/**
+ * Pre-parse shape accepted by `.parse()`/`.safeParse()` — every defaulted field (`schema`'s
+ * `kind`, each image's `roles`/`starred`, `project_ids`, `style_guide_ids`, …) is optional here,
+ * unlike `GenerationMetadata` (the fully-resolved output type, where zod v4 makes defaulted
+ * fields required). `library.ts`'s write helpers build against this type, not `GenerationMetadata`.
+ */
+export type GenerationMetadataInput = z.input<typeof generationMetadataSchema>
+
+/**
+ * Read-time migration for schema-1 sidecars (no `schema` key at all — none of the real sidecars
+ * probed this session had one, so detecting on `schema === 1` would silently fail to migrate
+ * every existing generation). Legacy-detection predicate is `!('schema' in json)`, per the brief.
+ *
+ * Every schema-2 field with a zod `.default()` (kind, roles/starred, project_ids, style_guide_ids,
+ * …) is filled in by `generationMetadataSchema.parse()`/`.safeParse()` itself — this function only
+ * handles the one thing zod can't do on its own: renaming the flat `parent_id` string into the
+ * richer `parent` object, inferring `op: 'edit'` in the one case the record actually tells us
+ * (kind === 'edit' with a parent_id) and omitting `op` otherwise rather than guessing. Every other
+ * field, recognized or not, passes through via the `rest` spread. Migration never rewrites the
+ * sidecar on disk — it upgrades lazily whenever something re-saves it (`library.ts`, `derived.ts`).
+ */
+export function migrateGenerationMetadata(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw
+  const record = raw as Record<string, unknown>
+  if ('schema' in record) return record
+
+  const { parent_id, ...rest } = record
+  if (typeof parent_id !== 'string') {
+    return { ...rest, schema: 2 }
+  }
+
+  return {
+    ...rest,
+    schema: 2,
+    parent: { id: parent_id, ...(rest['kind'] === 'edit' ? { op: 'edit' as const } : {}) },
+  }
+}

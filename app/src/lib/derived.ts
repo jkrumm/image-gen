@@ -7,7 +7,11 @@
  */
 import { BaseDirectory, mkdir, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import type { Recipe } from './imaging/recipe'
-import { generationMetadataSchema, type GenerationDerivative } from './metadata'
+import {
+  generationMetadataSchema,
+  migrateGenerationMetadata,
+  type GenerationDerivative,
+} from './metadata'
 
 /** Library root, relative to the OS Pictures directory — mirrors `library.ts`'s `ROOT`. */
 const ROOT = 'ImageGen'
@@ -40,14 +44,21 @@ export async function writeDerivedPng(
 
 /** Appends one derivative record to a generation's `metadata.json` sidecar, preserving every
  * other field. Re-parses through the full schema so a corrupt sidecar fails loudly here rather
- * than silently writing bad data forward. */
+ * than silently writing bad data forward.
+ *
+ * Migrates first: schema 2 requires `schema: 2` with no default, and migration is read-time only
+ * (it never rewrites disk), so a pre-schema-2 sidecar stays legacy until something re-saves it —
+ * and this is one of those re-save paths. Parsing without migrating would throw the first time a
+ * user refined any generation created before schema 2. Unlike `listGenerations()`, which
+ * `safeParse`s and silently skips, this path throws, so the failure would surface as a broken
+ * Refine export rather than a vanished library entry. */
 export async function recordDerivative(
   generationId: string,
   derivative: GenerationDerivative,
 ): Promise<void> {
   const dir = generationDir(generationId)
   const raw = await readTextFile(`${dir}/metadata.json`, { baseDir: BaseDirectory.Picture })
-  const metadata = generationMetadataSchema.parse(JSON.parse(raw))
+  const metadata = generationMetadataSchema.parse(migrateGenerationMetadata(JSON.parse(raw)))
   const next = { ...metadata, derivatives: [...(metadata.derivatives ?? []), derivative] }
   await writeTextFile(`${dir}/metadata.json`, JSON.stringify(next, null, 2), {
     baseDir: BaseDirectory.Picture,

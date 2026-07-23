@@ -5,6 +5,8 @@ import {
   type EditResponse,
   type GenerateRequestInput,
   type GenerateResponse,
+  type GenerationParent,
+  type SidecarEnhance,
 } from '@image-gen/shared'
 import { join, pictureDir } from '@tauri-apps/api/path'
 import { warn as logWarn } from '@tauri-apps/plugin-log'
@@ -20,8 +22,10 @@ import {
 import type { EditFiles } from './gateway'
 import {
   generationMetadataSchema,
+  migrateGenerationMetadata,
   type GenerationImageMeta,
   type GenerationMetadata,
+  type GenerationMetadataInput,
 } from './metadata'
 
 /** Library root, relative to the OS Pictures directory: `~/Pictures/ImageGen/`. */
@@ -33,11 +37,24 @@ export type LibraryEntry = {
   dir: string
 }
 
-/** Extends the gateway request with app-only lineage — never sent to the gateway itself. */
-export type SaveGenerationRequest = GenerateRequestInput & { parentId?: string }
+/** Extends the gateway request with app-only lineage/plan/context — never sent to the gateway
+ * itself. `parent` carries the full lineage edge (`{ id, image?, op? }`) now that Tweak/Re-run/
+ * Promote/edit all know which image and which operation produced the new generation — see
+ * `replay.ts` and the seed contract in `App.tsx`. */
+export type SaveGenerationRequest = GenerateRequestInput & {
+  parent?: GenerationParent
+  enhance?: SidecarEnhance
+  project_ids?: string[]
+  style_guide_ids?: string[]
+}
 
-/** Extends the gateway edit request with app-only lineage — never sent to the gateway itself. */
-export type SaveEditRequest = EditRequestInput & { parentId?: string }
+/** Extends the gateway edit request with app-only lineage/plan/context — never sent to the gateway itself. */
+export type SaveEditRequest = EditRequestInput & {
+  parent?: GenerationParent
+  enhance?: SidecarEnhance
+  project_ids?: string[]
+  style_guide_ids?: string[]
+}
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
@@ -138,6 +155,7 @@ export async function saveGeneration(
   const images = await writeOutputImages(dir, response.images)
 
   const metadata = generationMetadataSchema.parse({
+    schema: 2,
     id,
     created_at: new Date().toISOString(),
     kind: 'generate',
@@ -161,8 +179,11 @@ export async function saveGeneration(
     usage: response.usage,
     cost: response.cost,
     latency_ms: response.latency_ms,
-    ...(request.parentId !== undefined ? { parent_id: request.parentId } : {}),
-  } satisfies GenerationMetadata)
+    ...(request.parent !== undefined ? { parent: request.parent } : {}),
+    ...(request.enhance !== undefined ? { enhance: request.enhance } : {}),
+    ...(request.project_ids !== undefined ? { project_ids: request.project_ids } : {}),
+    ...(request.style_guide_ids !== undefined ? { style_guide_ids: request.style_guide_ids } : {}),
+  } satisfies GenerationMetadataInput)
 
   await writeMetadataSidecar(dir, metadata)
 
@@ -184,6 +205,7 @@ export async function saveEdit(
   const { inputImages, mask } = await writeInputFiles(dir, files)
 
   const metadata = generationMetadataSchema.parse({
+    schema: 2,
     id,
     created_at: new Date().toISOString(),
     kind: 'edit',
@@ -212,8 +234,11 @@ export async function saveEdit(
     usage: response.usage,
     cost: response.cost,
     latency_ms: response.latency_ms,
-    ...(request.parentId !== undefined ? { parent_id: request.parentId } : {}),
-  } satisfies GenerationMetadata)
+    ...(request.parent !== undefined ? { parent: request.parent } : {}),
+    ...(request.enhance !== undefined ? { enhance: request.enhance } : {}),
+    ...(request.project_ids !== undefined ? { project_ids: request.project_ids } : {}),
+    ...(request.style_guide_ids !== undefined ? { style_guide_ids: request.style_guide_ids } : {}),
+  } satisfies GenerationMetadataInput)
 
   await writeMetadataSidecar(dir, metadata)
 
@@ -230,11 +255,14 @@ export async function listGenerations(): Promise<LibraryEntry[]> {
 
   for (const entry of entries) {
     if (!entry.isDirectory) continue
+    // `.imagegen/` holds studio state (projects, styles, drafts), not generations — skipping it
+    // here keeps it from being scanned for a metadata.json it will never have.
+    if (entry.name.startsWith('.')) continue
     const dir = `${ROOT}/${entry.name}`
 
     try {
       const raw = await readTextFile(`${dir}/metadata.json`, { baseDir: BaseDirectory.Picture })
-      const parsed = generationMetadataSchema.safeParse(JSON.parse(raw))
+      const parsed = generationMetadataSchema.safeParse(migrateGenerationMetadata(JSON.parse(raw)))
       if (!parsed.success) {
         void logWarn(`Skipping invalid generation metadata at ${dir}: ${parsed.error.message}`)
         continue
@@ -246,6 +274,31 @@ export async function listGenerations(): Promise<LibraryEntry[]> {
   }
 
   return generations.toSorted((a, b) => b.metadata.created_at.localeCompare(a.metadata.created_at))
+}
+
+/**
+ * Patches a saved generation's `metadata.json` sidecar — the inspector's write path for roles/
+ * star (Task 4) and any other in-place edit. Mirrors `derived.ts#recordDerivative`'s shape (same
+ * migrate-then-parse, same re-parse-through-the-full-schema-before-writing) for the same reason:
+ * schema 2 requires `schema: 2` with no default, and migration is read-time only — it never
+ * rewrites disk, so a legacy sidecar stays legacy until something re-saves it. Parsing without
+ * migrating first would throw the first time a user edited roles on any pre-schema-2 generation.
+ * Unlike `listGenerations()`, which `safeParse`s and silently skips a bad sidecar, this throws —
+ * a failed roles edit should surface as an error, not silently no-op.
+ */
+export async function updateGenerationMetadata(
+  id: string,
+  patch: Partial<GenerationMetadataInput>,
+): Promise<GenerationMetadata> {
+  const dir = `${ROOT}/${id}`
+  const raw = await readTextFile(`${dir}/metadata.json`, { baseDir: BaseDirectory.Picture })
+  const metadata = generationMetadataSchema.parse(migrateGenerationMetadata(JSON.parse(raw)))
+  const next = generationMetadataSchema.parse({
+    ...metadata,
+    ...patch,
+  } satisfies GenerationMetadataInput)
+  await writeMetadataSidecar(dir, next)
+  return next
 }
 
 /** Absolute filesystem path to a saved generation's file, for `convertFileSrc()`. */

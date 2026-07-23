@@ -188,27 +188,34 @@ gateway-status: ## Is the deployed gateway healthy, and is it running the image 
 	@# healthy container says nothing about WHICH code is healthy. (These comments live outside
 	@# the shell block below on purpose — that block is one backslash-continued command, so a
 	@# `#` inside it would comment out everything that follows.)
-	@BASE=$${IMAGE_GEN_BASE_URL:-$$($(call op_read,op://vps/image-gen-gateway/BASE_URL))}; \
-	if [ -z "$$BASE" ]; then echo "✗ set IMAGE_GEN_BASE_URL or seed op://vps/image-gen-gateway/BASE_URL"; exit 1; fi; \
-	printf "  verifying the deployed gateway matches your HEAD… "; \
-	HEALTH=$$(curl -sS --max-time 15 "$$BASE/health" 2>/dev/null); \
-	if [ "$$HEALTH" != '{"status":"ok"}' ]; then \
-	  echo "UNHEALTHY"; echo "✗ $$BASE/health returned: $$HEALTH"; exit 1; \
-	fi; \
-	RUNNING=$$(ssh vps 'docker inspect --format "{{.Config.Image}}" $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway") 2>/dev/null' 2>/dev/null | sed 's/.*://'); \
+	@printf "  verifying the deployed gateway matches your HEAD… "
+	@RUNNING=$$(ssh vps 'docker inspect --format "{{.Config.Image}}" $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway") 2>/dev/null' 2>/dev/null | sed 's/.*://'); \
 	HEAD_SHA=$$(git rev-parse HEAD); \
 	if [ -z "$$RUNNING" ]; then \
-	  echo "UNKNOWN"; echo "⚠ healthy, but could not read the running image tag over ssh — deployed version unverified"; \
-	elif [ "$$RUNNING" = "$$HEAD_SHA" ]; then \
-	  echo "ok ($$(echo $$RUNNING | cut -c1-12))"; \
-	else \
+	  echo "UNKNOWN"; \
+	  echo "✗ could not read the running image tag over ssh — the deployed version is unverified."; \
+	  exit 1; \
+	elif [ "$$RUNNING" != "$$HEAD_SHA" ]; then \
 	  echo "MISMATCH"; \
 	  echo "✗ the gateway is serving an image built from a different commit than your HEAD."; \
 	  echo "    HEAD:     $$HEAD_SHA"; \
 	  echo "    deployed: $$RUNNING"; \
 	  echo "  Deploy with: make gateway-deploy"; \
 	  exit 1; \
-	fi
+	fi; \
+	echo "ok ($$(echo $$RUNNING | cut -c1-12))"
+	@# The health probe is a bonus, not the verification — and it is the only part that needs a
+	@# hostname. Degrade rather than fail when the URL is unavailable: BASE_URL is a non-secret
+	@# coordinate that merely lives in 1P (the repo is public and must not hardcode the host), so
+	@# an unseeded cache is no reason to withhold the SHA check that just passed.
+	@BASE=$${IMAGE_GEN_BASE_URL:-$$($(call op_read,op://vps/image-gen-gateway/BASE_URL))}; \
+	if [ -z "$$BASE" ]; then \
+	  echo "  ⚠ skipped the /health probe — no gateway URL available (set IMAGE_GEN_BASE_URL or seed op://vps/image-gen-gateway/BASE_URL)"; \
+	  exit 0; \
+	fi; \
+	printf "  probing %s/health… " "$$BASE"; \
+	HEALTH=$$(curl -sS --max-time 15 "$$BASE/health" 2>/dev/null); \
+	if [ "$$HEALTH" = '{"status":"ok"}' ]; then echo "ok"; else echo "UNHEALTHY"; echo "✗ returned: $$HEALTH"; exit 1; fi
 
 gateway-logs: ## Tail the deployed gateway's container logs (does not terminate — Ctrl-C to stop)
 	ssh vps 'docker logs -f $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway")'

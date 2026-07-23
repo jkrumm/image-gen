@@ -37,7 +37,7 @@ Persistent chrome: the existing **QueueBar** (queue architecture unchanged — j
 
 - Brief in → **Plan** (button / Cmd+Enter; never on keystroke). The response renders as:
   - the prompt, editable, with enhancer **additions visually marked** and each assumption a removable chip ("added: soft diffuse light");
-  - derived settings pre-filled into the normal controls (model, size, quality, background, n, fidelity, moderation) — every one overridable, none hidden; user-pinned values are echoed verbatim, never derived over;
+  - derived settings pre-filled into the normal controls (size, quality, background, n, moderation) — every one overridable, none hidden; user-pinned values are echoed verbatim, never derived over. There is no model control: the studio generates on `gpt-image-2` only (`gpt-image-1.5`/`-mini` are retired from the generate path, still parsed forever on the read path), and `input_fidelity` is never sent because gpt-image-2 rejects it and is locked to high internally;
   - policy verdict inline: green / rewritten-with-diff / warning with one-click rewrite / hard-wall refusal with the playbook explanation;
   - estimated cost ("4 × high ≈ $0.84 — draft at low for $0.02?").
 - Aggressiveness is gated by input: short brief → full enhancement; medium → gap-fill only; long/structured expert prompt → passthrough with a banner saying so. A raw toggle skips the enhancer entirely. (The Berkeley finding — silent auto-rewriting erased expert users' precision — is this design's central taboo.)
@@ -71,7 +71,7 @@ The moderation pre-check is a first-class UX element, built from the playbook's 
 
 ## 5. User stories (definitive set)
 
-1. **Icon set for a website.** New Project "acme-site" (default style guide attached). Brief: "icon: webhook delivery, line style". Plan detects `icon`, injects flat-design/strong-silhouette vocabulary, derives transparent → gpt-image-1.5 (chip shows the reroute), 1024², low, n=4. Drafts stream in. Star the winner, Promote to high, mark `role: icon`, Refine → `.iconset`. Repeat per concept — project context keeps the set coherent. Total <$1.50 with full lineage.
+1. **Icon set for a website.** New Project "acme-site" (default style guide attached). Brief: "icon: webhook delivery, line style". Plan detects `icon`, injects flat-design/strong-silhouette vocabulary, derives a plain solid white background (transparency is unavailable — the assumptions chip says so, and the asset may need manual background removal), 1024², low, n=4. Drafts stream in. Star the winner, Promote to high, mark `role: icon`, Refine → `.iconset`. Repeat per concept — project context keeps the set coherent. Total <$1.50 with full lineage.
 2. **Landing-page hero matching an existing site.** Styles → New from `tokens.css` + screenshot → gateway distills palette/typography/fragment → save "acme-web". Create: brief + style chip → Plan weaves the fragment, derives 2560×1440/gpt-image-2/high, endpoint edit with 2 style refs, shows ~$0.21 before run. Draft low first, promote the pick.
 3. **Journal cover series.** Project "journal-2026" holds three anchors. Brief: "November: first frost on the harbor". Plan reuses the anchors' painterly vocabulary verbatim (impasto, sapphire/ochre, masthead negative space), varies only the subject. Cover #4 reads as the same hand; its accepted prompt becomes anchor #4.
 4. **Article images, fast and cheap.** No project. Brief → Plan derives wide, negative space for title, medium quality; user flips to low/n=6 (~$0.04), picks, promotes. $0.25 instead of six high-quality rolls.
@@ -104,10 +104,11 @@ Generation folders stay exactly as today (append-only history). Sidecar `metadat
   "enhance": {                                    // the accepted Plan = the eval tuple
     "brief": "…", "intent": "icon", "mode_applied": "full",
     "plan_prompt": "…", "final_prompt_edited": false,
-    "assumptions": [{ "slot": "lighting", "text": "…" }],
+    "additions": [{ "slot": "lighting", "text": "…" }],   // gap-fills, mirrors the response
+    "assumptions": ["…"],                                 // free-text notes, mirrors the response
     "warnings": [{ "code": "…", "severity": "…", "action": "accepted|dismissed" }],
     "series_context_ids": ["…"],
-    "playbook_version": "3", "enhance_model": "gpt-5.6"
+    "playbook_version": "4", "enhance_model": "gpt-5.6"
   },
   "moderation_outcome": { "blocked": true, "stage": "input", "categories": ["…"] } // when blocked
 }
@@ -141,14 +142,14 @@ Generation folders stay exactly as today (append-only history). Sidecar `metadat
   "additions": [{ "slot": "lighting", "text": "…" }],
   "verbatim_check": { "ok": true, "missing": [] },  // server-side containment post-check
   "assumptions": ["…"],
-  "settings": { "endpoint": "edit", "model": "gpt-image-1.5", "size": "1024x1024",
-                "quality": "medium", "background": "transparent", "n": 4,
-                "moderation": "auto", "input_fidelity": "high", "partial_images": 1 },
+  "settings": { "endpoint": "edit", "model": "gpt-image-2", "size": "1024x1024",
+                "quality": "medium", "background": "opaque", "n": 4,
+                "moderation": "auto", "partial_images": 1 },
   "estimated_cost": { "per_image_usd": 0.06, "total_usd": 0.24 },
   "warnings": [{ "code": "restraint_terms", "severity": "warn" | "rewrite" | "hard",
                  "message": "…", "suggested_rewrite": "…", "moderation_suggestion": "low",
                  "predicted_stage": "input" }],
-  "mode_applied": "full", "playbook_version": "3" }
+  "mode_applied": "full", "playbook_version": "4" }
 ```
 
 The LLM proposes; **`rules.ts` disposes** — settings are validated server-side against `MODEL_CAPABILITIES` before the response leaves the gateway. The system prompt is compiled from `shared/playbook/` at startup.
@@ -182,4 +183,4 @@ The LLM proposes; **`rules.ts` disposes** — settings are validated server-side
 
 ## 10. Long-term trajectory (designed-for, not built)
 
-Named work-items with a bench strip (panel A's Piece) once multi-round work strains persisted drafts; saved searches once roles+search fall short; screenshot/CSS distillation hardening (wave 2 ships design.md + library images first); SQLite index at scale; enhance eval corpus (the sidecar tuples) as few-shot context for a personalized enhancer; chained-edit drift guard; delivery/cost dashboards; SVG vectorization pipeline (pre-existing fast-follow); local matting for transparency on gpt-image-2 (open decision #1 in the handover — measure before building).
+Named work-items with a bench strip (panel A's Piece) once multi-round work strains persisted drafts; saved searches once roles+search fall short; screenshot/CSS distillation hardening (wave 2 ships design.md + library images first); SQLite index at scale; enhance eval corpus (the sidecar tuples) as few-shot context for a personalized enhancer; chained-edit drift guard; delivery/cost dashboards; SVG vectorization pipeline (pre-existing fast-follow); **local matting via Apple Vision to restore transparency** — no longer an open decision but the committed path, and now the *only* one, since going single-model on gpt-image-2 removed the studio's ability to emit alpha at all.

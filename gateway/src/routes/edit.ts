@@ -160,6 +160,7 @@ export const editRoutes = new Elysia().post(
       const context: StreamRequestContext = {
         id: requestId,
         model,
+        subTool: 'edit',
         requestedModel: fields.model,
         routed,
         routingReason: reason,
@@ -202,6 +203,7 @@ export const editRoutes = new Elysia().post(
     void reportUsage({
       requestId: response.id,
       model,
+      subTool: 'edit',
       usage: response.usage,
       cost: response.cost,
       durationMs: latencyMs,

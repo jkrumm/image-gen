@@ -48,6 +48,17 @@ describe('computeCost', () => {
     }
   })
 
+  // The `/enhance` planner is a text model. Before it had a rate, every plan
+  // reported `cost_usd: null` to argo, which renders as $0 — hiding most of this
+  // service's token volume behind a number that looked like "free".
+  test('the enhance planner prices from TEXT_RATES', () => {
+    const usage: Usage = { input_tokens: 1_000_000, output_tokens: 1_000_000, total_tokens: 2e6 }
+    // `gpt-5.6` is an alias that resolves to `gpt-5.6-sol` upstream, so they must
+    // price identically — $5/M in + $30/M out.
+    expect(computeCost('gpt-5.6', usage)).toEqual({ usd: 35, source: 'computed' })
+    expect(computeCost('gpt-5.6-sol', usage)).toEqual(computeCost('gpt-5.6', usage))
+  })
+
   test('unknown model returns no cost', () => {
     const usage: Usage = { input_tokens: 100, output_tokens: 100, total_tokens: 200 }
     expect(computeCost('not-a-real-model', usage)).toEqual({ usd: null, source: 'none' })

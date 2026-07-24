@@ -64,6 +64,7 @@ export const generateRoutes = new Elysia().post(
       const context: StreamRequestContext = {
         id: requestId,
         model,
+        subTool: 'generate',
         requestedModel: body.model,
         routed,
         routingReason: reason,
@@ -106,6 +107,7 @@ export const generateRoutes = new Elysia().post(
     void reportUsage({
       requestId: response.id,
       model,
+      subTool: 'generate',
       usage: response.usage,
       cost: response.cost,
       durationMs: latencyMs,

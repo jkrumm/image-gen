@@ -3,12 +3,14 @@ import { magicBytesValid } from './upstream.js'
 import { readSSEFrames, parseSSEFrame, mapPartialImageFrame } from './sse.js'
 import type { UpstreamCompletedData, UpstreamPartialImageData } from './sse.js'
 import { buildResponseEnvelope, EMPTY_USAGE } from './response.js'
-import { reportUsage } from './usage.js'
+import { reportUsage, type UsageSubTool } from './usage.js'
 import { log } from './log.js'
 
 export interface StreamRequestContext {
   id: string
   model: ImageModel
+  /** Route that opened the stream — carried through so usage keeps its grouping. */
+  subTool: UsageSubTool
   requestedModel: GenerateResponse['requested_model']
   routed: boolean
   routingReason?: string | undefined
@@ -104,6 +106,7 @@ export async function* streamImageResponse(
         void reportUsage({
           requestId: context.id,
           model: context.model,
+          subTool: context.subTool,
           usage,
           cost: response.cost,
           durationMs: latencyMs,

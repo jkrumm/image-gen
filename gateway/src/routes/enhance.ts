@@ -38,12 +38,19 @@ export const enhanceRoutes = new Elysia().post(
       output_tokens: result.usage.completion_tokens,
       total_tokens: result.usage.total_tokens,
     }
-    // `pricing.ts`'s RATES is keyed by ImageModel; ENHANCE_MODEL is a text
-    // model, so this is always `{ usd: null, source: 'none' }` — correct and
-    // honest, not a bug.
+    // Priced from `pricing.ts`'s TEXT_RATES, not RATES — a text model, not an
+    // image one. A model missing from that table still yields
+    // `{ usd: null, source: 'none' }`, which argo renders as $0.
     const cost = computeCost(env.ENHANCE_MODEL, usage)
 
-    void reportUsage({ requestId, model: env.ENHANCE_MODEL, usage, cost, durationMs: latencyMs })
+    void reportUsage({
+      requestId,
+      model: env.ENHANCE_MODEL,
+      subTool: 'enhance',
+      usage,
+      cost,
+      durationMs: latencyMs,
+    })
 
     return result.response
   },

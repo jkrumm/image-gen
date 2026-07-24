@@ -23,12 +23,36 @@ const RATES: Record<KnownImageModel, Rate> = {
 }
 
 /**
+ * USD per 1M tokens for the *text* models this gateway calls — today only the
+ * `/enhance` planner (`ENHANCE_MODEL`). Separate from `RATES` because these are
+ * not image models: they never emit `input_tokens_details`, and they must never
+ * leak into `IMAGE_MODELS`.
+ *
+ * Without an entry here `computeCost` returned `{ usd: null }` for every plan,
+ * which argo renders as $0 — that silently hid ~76% of this service's token
+ * volume until 2026-07-24.
+ *
+ * `gpt-5.6` is an **alias**, not a model: `/v1/models` on our endpoint lists only
+ * `-sol`/`-terra`/`-luna`, and a live probe (2026-07-24) showed a request for
+ * `gpt-5.6` comes back with `"model": "gpt-5.6-sol"` — so it is priced at sol's
+ * rate. Vendor docs claim no bare `gpt-5.6` exists at all; the endpoint disagrees.
+ * If the planner's cost ever looks off by an integer factor, re-probe first — the
+ * alias could be re-pointed at another tier without notice.
+ */
+const TEXT_RATES: Record<string, Rate> = {
+  'gpt-5.6': { text_in: 5.0, image_in: 5.0, out: 30.0 },
+  'gpt-5.6-sol': { text_in: 5.0, image_in: 5.0, out: 30.0 },
+  'gpt-5.6-terra': { text_in: 2.5, image_in: 2.5, out: 15.0 },
+  'gpt-5.6-luna': { text_in: 1.0, image_in: 1.0, out: 6.0 },
+}
+
+/**
  * Price one generation's usage. Uses `input_tokens_details` (text/image split)
  * when present; otherwise treats the whole input as text tokens. Unknown
  * models return `{ usd: null, source: 'none' }`.
  */
 export function computeCost(model: string, usage: Usage): Cost {
-  const rate = (RATES as Record<string, Rate | undefined>)[model]
+  const rate = (RATES as Record<string, Rate | undefined>)[model] ?? TEXT_RATES[model]
   if (!rate) return { usd: null, source: 'none' }
 
   const details = usage.input_tokens_details

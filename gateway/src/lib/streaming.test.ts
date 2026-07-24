@@ -25,6 +25,7 @@ function sseResponse(frames: string): Response {
 const baseContext = {
   id: 'req-1',
   model: 'gpt-image-2' as const,
+  subTool: 'generate' as const,
   requestedModel: 'auto' as const,
   routed: false,
   size: '1024x1024',

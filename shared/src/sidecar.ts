@@ -47,6 +47,12 @@ export type GenerationKind = (typeof GENERATION_KINDS)[number]
 export const MODERATION_STAGES = ['input', 'output'] as const
 export type ModerationStage = (typeof MODERATION_STAGES)[number]
 
+/** Delivery targets a generation can be shared/published to. Currently just the private
+ * image-share layer (docs/handover.md's Phase B "Delivery" feature) — HTTP to image-share only,
+ * never a generic multi-target adapter (that's Phase C, out of scope here). */
+export const PUBLICATION_TARGETS = ['image-share'] as const
+export type PublicationTarget = (typeof PUBLICATION_TARGETS)[number]
+
 /**
  * Mirrors app/src/lib/metadata.ts's `generationParamsSchema` shape, reusing
  * the gateway contract's own field schemas (same pattern, same rationale —
@@ -94,6 +100,22 @@ export const generationParentSchema = z.object({
   op: z.enum(PARENT_OPS).optional(),
 })
 export type GenerationParent = z.infer<typeof generationParentSchema>
+
+/**
+ * One delivery record — the generation has been shared and/or published to `target`.
+ * `image_share_id` is set as soon as the file lands in image-share's ingest path;
+ * `published_key`/`cdn_url` are added only once `/api/publish` has actually run. Mirrors
+ * `GenerationDerivative`'s additive-optional shape: old sidecars (recorded before this feature
+ * existed) simply have no `publications` key and keep parsing.
+ */
+export const generationPublicationSchema = z.object({
+  target: z.enum(PUBLICATION_TARGETS),
+  image_share_id: z.number().int(),
+  published_key: z.string().optional(),
+  cdn_url: z.string().optional(),
+  published_at: z.string(),
+})
+export type GenerationPublication = z.infer<typeof generationPublicationSchema>
 
 export const planWarningRecordSchema = z.object({
   code: z.string(),
@@ -166,6 +188,9 @@ export const generationMetadataV2Schema = z.object({
   style_fragment_used: z.string().optional(),
   enhance: sidecarEnhanceSchema.optional(),
   moderation_outcome: moderationOutcomeSchema.optional(),
+  /** Delivery records (share/publish to image-share). Additive-optional — absent on every
+   * sidecar recorded before this feature existed. */
+  publications: z.array(generationPublicationSchema).optional(),
 })
 export type GenerationMetadataV2 = z.infer<typeof generationMetadataV2Schema>
 

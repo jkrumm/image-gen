@@ -16,7 +16,7 @@ The redesign turns the app from an API console into a studio with a brain. Full 
 
 ## Non-goals
 
-- MCP facade, multi-user, cloud state, public exposure (unchanged from MVP).
+- MCP facade, multi-user, cloud state, public exposure — **except delivery of finished assets via image-share (Share/Publish from the Library inspector)**, which is a deliberate, scoped carve-out: HTTP to image-share only, no generic S3/SMB/SSH delivery connectors, no in-app public exposure of anything but an image a user explicitly published.
 - Style strength sliders, lineage graph canvases, embeddings/semantic search, auto-tagging, chat-shaped enhancement, in-app playbook editing, moderation simulators (rejected with rationale in `docs/concept.md` §9).
 - SQLite in the first waves — in-memory index over sidecars; SQLite is the named escape hatch.
 - SVG vectorization and gpt-image-2+matting transparency remain post-MVP fast-follows (handover open decisions).

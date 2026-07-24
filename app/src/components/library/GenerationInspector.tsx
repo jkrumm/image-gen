@@ -11,10 +11,16 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core'
+import { notifications } from '@mantine/notifications'
+import { error as logError } from '@tauri-apps/plugin-log'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { useEffect, useState } from 'react'
+import { cdnMarkdownEmbed } from '../../lib/image-share'
 import type { Recipe } from '../../lib/imaging/recipe'
 import { absolutePath, type LibraryEntry } from '../../lib/library'
 import type { GenerationMetadata } from '../../lib/metadata'
+import { findPublication } from '../../lib/publications'
+import type { ServiceConnection } from '../../lib/settings'
 import { DerivedSection } from './DerivedSection'
 import { LineagePanel } from './LineagePanel'
 import { PlanRecord } from './PlanRecord'
@@ -22,6 +28,16 @@ import { RolesEditor } from './RolesEditor'
 import { UseAsTrio, type UseAsAction } from './UseAsTrio'
 
 export type UseAsLoading = { filename: string; action: UseAsAction }
+
+async function handleReveal(path: string): Promise<void> {
+  try {
+    await revealItemInDir(path)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    void logError(`failed to reveal file in Finder: ${message}`)
+    notifications.show({ color: 'red', title: 'Could not reveal file', message })
+  }
+}
 
 type GenerationInspectorProps = {
   entry: LibraryEntry
@@ -49,6 +65,14 @@ type GenerationInspectorProps = {
   savingRolesFor: string | null
   onRolesChange: (image: GenerationImageV2, roles: Role[]) => void
   onStarredChange: (image: GenerationImageV2, starred: boolean) => void
+
+  /** Undefined when Settings has no image-share connection configured — Share/Publish stay
+   * disabled with a hint rather than hidden entirely. */
+  imageShare: ServiceConnection | undefined
+  sharing: boolean
+  publishing: boolean
+  onShare: () => void
+  onPublish: () => void
 }
 
 /**
@@ -78,21 +102,31 @@ export function GenerationInspector({
   savingRolesFor,
   onRolesChange,
   onStarredChange,
+  imageShare,
+  sharing,
+  publishing,
+  onShare,
+  onPublish,
 }: GenerationInspectorProps) {
   const { metadata } = entry
   const [imageSrcs, setImageSrcs] = useState<string[]>([])
+  const [imagePaths, setImagePaths] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
     void Promise.all(
       metadata.images.map((image) => absolutePath(metadata.id, image.filename)),
     ).then((paths) => {
-      return cancelled ? undefined : setImageSrcs(paths.map((path) => convertFileSrc(path)))
+      if (cancelled) return undefined
+      setImagePaths(paths)
+      return setImageSrcs(paths.map((path) => convertFileSrc(path)))
     })
     return () => {
       cancelled = true
     }
   }, [metadata.id, metadata.images])
+
+  const imageSharePublication = findPublication(metadata.publications, 'image-share')
 
   return (
     <Modal opened onClose={onClose} title="Generation" size={960}>
@@ -180,8 +214,74 @@ export function GenerationInspector({
                 onUseAsStyleSource={() => onUseAsStyleSource(image)}
                 onReusePromptSettings={() => onReusePromptSettings(image)}
               />
+              <Group gap={4} wrap="wrap">
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  disabled={!imagePaths[index]}
+                  onClick={() => void handleReveal(imagePaths[index] as string)}
+                >
+                  Reveal in Finder
+                </Button>
+                <CopyButton value={imagePaths[index] ?? ''}>
+                  {({ copied, copy }) => (
+                    <Button size="xs" variant="subtle" disabled={!imagePaths[index]} onClick={copy}>
+                      {copied ? 'Copied' : 'Copy path'}
+                    </Button>
+                  )}
+                </CopyButton>
+              </Group>
             </Stack>
           ))}
+        </Stack>
+
+        <Stack gap="xs">
+          <Text size="sm" fw={500}>
+            Delivery
+          </Text>
+          <Group gap="xs" wrap="wrap">
+            <Button
+              size="xs"
+              variant="default"
+              loading={sharing}
+              disabled={imageShare === undefined}
+              onClick={onShare}
+            >
+              Share to image-share
+            </Button>
+            <Button
+              size="xs"
+              variant="default"
+              loading={publishing}
+              disabled={imageShare === undefined}
+              onClick={onPublish}
+            >
+              Publish to CDN
+            </Button>
+            {imageSharePublication?.cdn_url && (
+              <>
+                <CopyButton value={imageSharePublication.cdn_url}>
+                  {({ copied, copy }) => (
+                    <Button size="xs" variant="subtle" onClick={copy}>
+                      {copied ? 'Copied' : 'Copy URL'}
+                    </Button>
+                  )}
+                </CopyButton>
+                <CopyButton value={cdnMarkdownEmbed(imageSharePublication.cdn_url)}>
+                  {({ copied, copy }) => (
+                    <Button size="xs" variant="subtle" onClick={copy}>
+                      {copied ? 'Copied' : 'Copy markdown'}
+                    </Button>
+                  )}
+                </CopyButton>
+              </>
+            )}
+          </Group>
+          {imageShare === undefined && (
+            <Text size="xs" c="dimmed">
+              Add an image-share URL and token in Settings to share or publish this generation.
+            </Text>
+          )}
         </Stack>
 
         <PlanRecord enhance={metadata.enhance} />

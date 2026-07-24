@@ -40,7 +40,7 @@ up: ## THE entrypoint: bring both halves to your working tree — build+install 
 	@$(MAKE) --no-print-directory gateway-status
 	@echo "✓ both halves match your working tree"
 
-configure: ## Seed ~/Pictures/ImageGen/.imagegen/settings.json from 1Password so the app never asks for the token. Re-run after rotating it.
+configure: ## Seed ~/Pictures/ImageGen/.imagegen/settings.json from 1Password (gateway + image-share) so the app never asks for either token. Re-run after rotating one.
 	@BASE=$$($(call op_read,op://vps/image-gen-gateway/BASE_URL)); \
 	TOKEN=$$($(call op_read,op://vps/image-gen-gateway/API_SECRET)); \
 	if [ -z "$$BASE" ] || [ -z "$$TOKEN" ]; then \
@@ -52,9 +52,18 @@ configure: ## Seed ~/Pictures/ImageGen/.imagegen/settings.json from 1Password so
 	  echo "  (Or run 'op signin --account tkrumm' in this shell first, with someone present.)"; \
 	  exit 1; \
 	fi; \
+	SHARE_BASE=$$($(call op_read,op://homelab/image-share/BASE_URL)); \
+	SHARE_TOKEN=$$($(call op_read,op://homelab/image-share/API_SECRET)); \
 	mkdir -p "$(HOME)/Pictures/ImageGen/.imagegen"; \
 	umask 077; \
-	printf '{\n  "baseUrl": "%s",\n  "token": "%s"\n}\n' "$$BASE" "$$TOKEN" > "$(HOME)/Pictures/ImageGen/.imagegen/settings.json"; \
+	if [ -n "$$SHARE_BASE" ] && [ -n "$$SHARE_TOKEN" ]; then \
+	  printf '{\n  "gateway": { "baseUrl": "%s", "token": "%s" },\n  "imageShare": { "baseUrl": "%s", "token": "%s" }\n}\n' \
+	    "$$BASE" "$$TOKEN" "$$SHARE_BASE" "$$SHARE_TOKEN" > "$(HOME)/Pictures/ImageGen/.imagegen/settings.json"; \
+	else \
+	  echo "⚠ could not read the image-share URL/token from 1Password (op://homelab/image-share/{BASE_URL,API_SECRET})"; \
+	  echo "  seeding gateway only — Share/Publish will stay disabled in the app until you seed those refs and re-run this target."; \
+	  printf '{\n  "gateway": { "baseUrl": "%s", "token": "%s" }\n}\n' "$$BASE" "$$TOKEN" > "$(HOME)/Pictures/ImageGen/.imagegen/settings.json"; \
+	fi; \
 	chmod 600 "$(HOME)/Pictures/ImageGen/.imagegen/settings.json"; \
 	echo "✓ wrote ~/Pictures/ImageGen/.imagegen/settings.json (chmod 600) — restart the app to pick it up"
 

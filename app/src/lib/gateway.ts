@@ -15,7 +15,7 @@ import {
   type PlanResponse,
 } from '@image-gen/shared'
 import { fetch } from '@tauri-apps/plugin-http'
-import type { Settings } from './settings'
+import type { ServiceConnection } from './settings'
 
 /**
  * Calls the image-gen gateway's `POST /generate` and `POST /edit`. Uses
@@ -93,18 +93,18 @@ function buildEditFormData(
 }
 
 export async function generate(
-  settings: Settings,
+  connection: ServiceConnection,
   input: GenerateRequestInput,
   signal?: AbortSignal,
 ): Promise<GenerateResponse> {
   const body = generateRequestSchema.parse(input)
-  const baseUrl = settings.baseUrl.replace(/\/+$/, '')
+  const baseUrl = connection.baseUrl.replace(/\/+$/, '')
 
   const response = await gatewayFetch(`${baseUrl}/generate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${settings.token}`,
+      Authorization: `Bearer ${connection.token}`,
     },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
@@ -114,20 +114,20 @@ export async function generate(
 }
 
 export async function edit(
-  settings: Settings,
+  connection: ServiceConnection,
   input: EditRequestInput,
   files: EditFiles,
   signal?: AbortSignal,
 ): Promise<EditResponse> {
   const body = editRequestSchema.parse(input)
-  const baseUrl = settings.baseUrl.replace(/\/+$/, '')
+  const baseUrl = connection.baseUrl.replace(/\/+$/, '')
 
   // No `Content-Type` here: the underlying `Request` constructor computes the
   // multipart boundary from the `FormData` body and plugin-http only copies headers
   // we haven't already set — setting our own would strip the boundary.
   const response = await gatewayFetch(`${baseUrl}/edit`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${settings.token}` },
+    headers: { Authorization: `Bearer ${connection.token}` },
     body: buildEditFormData(body, files),
     ...(signal ? { signal } : {}),
   })
@@ -144,18 +144,18 @@ export async function edit(
  * gateway is a separate process and a contract drift must fail loudly here.
  */
 export async function plan(
-  settings: Settings,
+  connection: ServiceConnection,
   input: PlanRequestInput,
   signal?: AbortSignal,
 ): Promise<PlanResponse> {
   const body = planRequestSchema.parse(input)
-  const baseUrl = settings.baseUrl.replace(/\/+$/, '')
+  const baseUrl = connection.baseUrl.replace(/\/+$/, '')
 
   const response = await gatewayFetch(`${baseUrl}/enhance`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${settings.token}`,
+      Authorization: `Bearer ${connection.token}`,
     },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
@@ -292,18 +292,18 @@ export async function consumeSseStream(
 }
 
 export async function generateStream(
-  settings: Settings,
+  connection: ServiceConnection,
   input: GenerateRequestInput,
   handlers: StreamHandlers,
 ): Promise<GenerateResponse> {
   const body = generateRequestSchema.parse(input)
-  const baseUrl = settings.baseUrl.replace(/\/+$/, '')
+  const baseUrl = connection.baseUrl.replace(/\/+$/, '')
 
   const response = await gatewayFetch(`${baseUrl}/generate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${settings.token}`,
+      Authorization: `Bearer ${connection.token}`,
     },
     body: JSON.stringify(body),
     ...(handlers.signal ? { signal: handlers.signal } : {}),
@@ -313,17 +313,17 @@ export async function generateStream(
 }
 
 export async function editStream(
-  settings: Settings,
+  connection: ServiceConnection,
   input: EditRequestInput,
   files: EditFiles,
   handlers: StreamHandlers,
 ): Promise<EditResponse> {
   const body = editRequestSchema.parse(input)
-  const baseUrl = settings.baseUrl.replace(/\/+$/, '')
+  const baseUrl = connection.baseUrl.replace(/\/+$/, '')
 
   const response = await gatewayFetch(`${baseUrl}/edit`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${settings.token}` },
+    headers: { Authorization: `Bearer ${connection.token}` },
     body: buildEditFormData(body, files),
     ...(handlers.signal ? { signal: handlers.signal } : {}),
   })

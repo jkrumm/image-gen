@@ -384,7 +384,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
   // are always available — the old presets-only gate belonged to the retired models.
   const resolvedModel = useMemo(() => resolveModel({ model }), [model])
 
-  if (!isSettingsConfigured(settings)) {
+  if (!isSettingsConfigured(settings.gateway)) {
     return (
       <EmptyState
         title="Connect your gateway"
@@ -523,7 +523,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
         has_references: references.length > 0,
       }
 
-      const response = await plan(settings, input)
+      const response = await plan(settings.gateway, input)
       setPlanResult(response)
       setPrompt(response.prompt)
       applyPlanSettings(response.settings)

@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the main ImageGen window: gateway HTTP calls (any host — user-configured at runtime) and library file access under ~/Pictures/ImageGen. The .imagegen entries are NOT redundant with the ** globs: tauri-plugin-fs defaults require_literal_leading_dot to true on unix, so ** never matches a dot-prefixed component.",
+  "description": "Capabilities for the main ImageGen window: gateway + image-share HTTP calls (any host — both are user-configured at runtime, so the http:default scope stays host-agnostic rather than allowlisting either one by name), library file access under ~/Pictures/ImageGen, and revealing library files in Finder (opener:default). The .imagegen entries are NOT redundant with the ** globs: tauri-plugin-fs defaults require_literal_leading_dot to true on unix, so ** never matches a dot-prefixed component.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:default",
     "log:default",
+    "opener:default",
     {
       "identifier": "http:default",
       "allow": [{ "url": "http://*:*" }, { "url": "https://*:*" }]

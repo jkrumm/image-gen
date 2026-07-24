@@ -168,11 +168,11 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
       try {
         const response = shouldStreamJob(input.n, stream)
           ? await generateStream(
-              settings,
+              settings.gateway,
               { ...input, partial_images: effectivePartialImages(input.partial_images) },
               { onPartial: onPartialFor(id, controller), signal: controller.signal },
             )
-          : await generate(settings, { ...input, partial_images: 0 }, controller.signal)
+          : await generate(settings.gateway, { ...input, partial_images: 0 }, controller.signal)
         if (controller.signal.aborted) return
         const metadata = await saveGeneration(response, input)
         updateJob(id, {
@@ -217,7 +217,7 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
       try {
         const response = shouldStreamJob(coerceNumber(input.n), stream)
           ? await editStream(
-              settings,
+              settings.gateway,
               {
                 ...input,
                 partial_images: effectivePartialImages(coerceNumber(input.partial_images)),
@@ -225,7 +225,7 @@ export function QueueProvider({ children, settings, onSaved }: QueueProviderProp
               files,
               { onPartial: onPartialFor(id, controller), signal: controller.signal },
             )
-          : await edit(settings, { ...input, partial_images: 0 }, files, controller.signal)
+          : await edit(settings.gateway, { ...input, partial_images: 0 }, files, controller.signal)
         if (controller.signal.aborted) return
         const metadata = await saveEdit(response, input, files)
         updateJob(id, {

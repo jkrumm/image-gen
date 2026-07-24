@@ -114,6 +114,49 @@ describe('generationMetadataV2Schema', () => {
     expect(result.enhance).toBeUndefined()
   })
 
+  test('parses a generation with no publications key at all (pre-delivery-feature sidecar)', () => {
+    const result = generationMetadataV2Schema.parse(baseGeneration)
+    expect(result.publications).toBeUndefined()
+  })
+
+  test('accepts a publications entry recorded after sharing but before publishing', () => {
+    const result = generationMetadataV2Schema.parse({
+      ...baseGeneration,
+      publications: [
+        { target: 'image-share', image_share_id: 42, published_at: '2026-07-24T10:00:00.000Z' },
+      ],
+    })
+    expect(result.publications).toEqual([
+      { target: 'image-share', image_share_id: 42, published_at: '2026-07-24T10:00:00.000Z' },
+    ])
+  })
+
+  test('accepts a publications entry with published_key/cdn_url once publishing has run', () => {
+    const result = generationMetadataV2Schema.parse({
+      ...baseGeneration,
+      publications: [
+        {
+          target: 'image-share',
+          image_share_id: 42,
+          published_key: 'gen/ab12cd34.png',
+          cdn_url: 'https://img.jkrumm.com/gen/ab12cd34.png',
+          published_at: '2026-07-24T10:05:00.000Z',
+        },
+      ],
+    })
+    expect(result.publications?.[0]?.cdn_url).toBe('https://img.jkrumm.com/gen/ab12cd34.png')
+  })
+
+  test('rejects an unknown publication target', () => {
+    const result = generationMetadataV2Schema.safeParse({
+      ...baseGeneration,
+      publications: [
+        { target: 'not-a-target', image_share_id: 42, published_at: '2026-07-24T10:00:00.000Z' },
+      ],
+    })
+    expect(result.success).toBe(false)
+  })
+
   test('rejects an invalid role', () => {
     const result = generationMetadataV2Schema.safeParse({
       ...baseGeneration,

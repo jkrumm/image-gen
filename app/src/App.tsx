@@ -139,6 +139,7 @@ export function App() {
         <Activity mode={view === 'library' ? 'visible' : 'hidden'}>
           <ScrollArea style={{ flex: 1 }} scrollbars="y">
             <Library
+              settings={settings}
               entries={entries}
               totalCost={totalCost}
               onSeedCreate={seedCreate}

@@ -63,6 +63,14 @@ describe('loadStoredSettings', () => {
     ).toBeUndefined()
   })
 
+  test('drops a structurally invalid imageShare (missing token key) but keeps the gateway', async () => {
+    // A hand-edited file like `{"gateway":{...},"imageShare":{"baseUrl":"x"}}` must not lose the
+    // gateway connection just because imageShare fails its own schema.
+    expect(
+      await loadStoredSettings(fakeStore({ gateway: GATEWAY, imageShare: { baseUrl: 'x' } })),
+    ).toEqual(VALID)
+  })
+
   test('a throwing read degrades to undefined instead of propagating', async () => {
     const throwing = {
       readSettings: async () => {

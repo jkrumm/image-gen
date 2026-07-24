@@ -34,20 +34,42 @@ async function imageShareFetch(url: string, init: RequestInit): Promise<Response
   }
 }
 
-/** Parses a JSON envelope, throwing the server's own error message (Elysia's default error body
- * carries a `message` field) rather than a bare status code when one is present. */
-async function parseJson<T>(response: Response): Promise<T> {
-  const json: unknown = await response.json()
+/** Extracts a human-readable error message from a non-ok response body, which may be a JSON
+ * envelope (`{message}`, from Elysia's default error body or validation errors) or plain text
+ * (`status(400, '<string>')` from ingest constraints, `status(401, 'Unauthorized')` from the auth
+ * guard). Returns undefined for an empty/whitespace-only body so the caller can fall back to the
+ * status code. */
+function extractErrorMessage(text: string): string | undefined {
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return undefined
 
-  if (!response.ok) {
-    const message =
-      typeof json === 'object' && json !== null && 'message' in json
-        ? String((json as { message: unknown }).message)
-        : `image-share request failed with status ${response.status}`
-    throw new Error(message)
+  try {
+    const json: unknown = JSON.parse(trimmed)
+    if (typeof json === 'object' && json !== null && 'message' in json) {
+      return String((json as { message: unknown }).message)
+    }
+  } catch {
+    // Not JSON — fall through to the raw text below.
   }
 
-  return json as T
+  return trimmed.length > 300 ? `${trimmed.slice(0, 300)}…` : trimmed
+}
+
+/** Parses a response body as JSON, throwing the server's own error message rather than a bare
+ * status code when one is present. Reads the body as text first — image-share's error responses
+ * are often plain text, not JSON, and calling `.json()` on those throws a confusing SyntaxError
+ * instead of surfacing the server's actual message. Exported purely so `image-share.test.ts` can
+ * drive it directly against constructed `Response` objects, without a Tauri runtime. */
+export async function parseJson<T>(response: Response): Promise<T> {
+  const text = await response.text()
+
+  if (!response.ok) {
+    throw new Error(
+      extractErrorMessage(text) ?? `image-share request failed with status ${response.status}`,
+    )
+  }
+
+  return JSON.parse(text) as T
 }
 
 /** Uploads one file to image-share's ingest path. Returns the numeric image id `/api/publish`

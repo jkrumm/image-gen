@@ -42,6 +42,27 @@ function migrateSettingsShape(raw: unknown): unknown {
 }
 
 /**
+ * Parses raw persisted/on-disk data into `Settings`, tolerating a structurally invalid
+ * `imageShare` (e.g. hand-edited with a missing `token` key). `imageShare` is optional
+ * everywhere it's read, so a value that fails its own schema must be dropped rather than fail
+ * the whole parse and take the gateway connection down with it.
+ */
+function safeParseSettings(raw: unknown): Settings | undefined {
+  const shaped = migrateSettingsShape(raw)
+  const parsed = settingsSchema.safeParse(shaped)
+  if (parsed.success) return parsed.data
+
+  if (typeof shaped !== 'object' || shaped === null || !('imageShare' in shaped)) {
+    return undefined
+  }
+
+  const withoutImageShare = { ...(shaped as Record<string, unknown>) }
+  delete withoutImageShare['imageShare']
+  const parsedWithoutImageShare = settingsSchema.safeParse(withoutImageShare)
+  return parsedWithoutImageShare.success ? parsedWithoutImageShare.data : undefined
+}
+
+/**
  * Gateway connection settings.
  *
  * The localStorage hook below is a *cache*, not the store of record — the file at
@@ -64,10 +85,7 @@ export const useSettings = createPersistedState<Settings>({
   key: 'settings',
   version: 2,
   initial: DEFAULT_SETTINGS,
-  migrate: (persisted) => {
-    const parsed = settingsSchema.safeParse(migrateSettingsShape(persisted))
-    return parsed.success ? parsed.data : DEFAULT_SETTINGS
-  },
+  migrate: (persisted) => safeParseSettings(persisted) ?? DEFAULT_SETTINGS,
   schema: settingsSchema,
 })
 
@@ -91,9 +109,9 @@ export async function loadStoredSettings(
 ): Promise<Settings | undefined> {
   const raw = await store.readSettings().catch(() => undefined)
   if (raw === undefined) return undefined
-  const parsed = settingsSchema.safeParse(migrateSettingsShape(raw))
-  if (!parsed.success) return undefined
-  return isSettingsConfigured(parsed.data.gateway) ? parsed.data : undefined
+  const parsed = safeParseSettings(raw)
+  if (parsed === undefined) return undefined
+  return isSettingsConfigured(parsed.gateway) ? parsed : undefined
 }
 
 /** Persist settings to disk. Failures are surfaced to the caller — a silent write failure here

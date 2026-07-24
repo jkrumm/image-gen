@@ -33,7 +33,7 @@ import {
 } from '../lib/replay'
 import { withImageRoleAdded, withImageRoles, withImageStarred } from '../lib/roles'
 import { useQueue } from '../lib/queue'
-import type { Settings } from '../lib/settings'
+import { isSettingsConfigured, type Settings } from '../lib/settings'
 import { studioStore } from '../lib/studio-store'
 
 /** Maps a saved image's on-disk format back to a MIME type for constructing a `File`. */
@@ -490,7 +490,7 @@ export function Library({
           onStarredChange={(image, starred) =>
             void handleStarredChange(selected.metadata, image, starred)
           }
-          imageShare={settings.imageShare}
+          imageShare={isSettingsConfigured(settings.imageShare) ? settings.imageShare : undefined}
           sharing={deliveryOp?.id === selected.metadata.id && deliveryOp.op === 'share'}
           publishing={deliveryOp?.id === selected.metadata.id && deliveryOp.op === 'publish'}
           onShare={() => void handleShare(selected.metadata)}

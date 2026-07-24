@@ -8,17 +8,21 @@ import { log } from './log.js'
  */
 export type UsageSubTool = 'generate' | 'edit' | 'enhance'
 
+const EMPTY_COST: Cost = { usd: null, source: 'none' }
+const ZERO_USAGE: Usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 }
+
 /**
  * Fire-and-forget telemetry POST to argo. Strict no-op when the env vars are
  * unset; failures are logged, never thrown, and never block the caller.
  */
-export async function reportUsage(args: {
+async function postRecord(args: {
   requestId: string
   model: string
   subTool: UsageSubTool
   usage: Usage
   cost: Cost
   durationMs: number
+  outcome: 'ok' | 'error'
 }): Promise<void> {
   if (!env.ARGO_USAGE_URL || !env.ARGO_API_SECRET) return
   const usageUrl = env.ARGO_USAGE_URL
@@ -44,7 +48,7 @@ export async function reportUsage(args: {
       sub_tool: args.subTool,
       machine: env.MACHINE,
       billing: 'iu',
-      outcome: 'ok',
+      outcome: args.outcome,
       input_tokens: args.usage.input_tokens,
       output_tokens: args.usage.output_tokens,
       cache_read_tokens: 0,
@@ -73,4 +77,46 @@ export async function reportUsage(args: {
   } catch (err) {
     log('usage.report_failed', { error: String(err) })
   }
+}
+
+/** Report a successful request. */
+export function reportUsage(args: {
+  requestId: string
+  model: string
+  subTool: UsageSubTool
+  usage: Usage
+  cost: Cost
+  durationMs: number
+}): Promise<void> {
+  return postRecord({ ...args, outcome: 'ok' })
+}
+
+/**
+ * Report a failed request so argo's error-rate view can see it. Reporting only
+ * successes leaves `outcome` permanently `'ok'`, which reads as a service that
+ * has never failed rather than one that isn't measured.
+ *
+ * `usage` is optional because most failures produce no token counts — but an
+ * enhance failure does (the planner burns tokens on both attempts before giving
+ * up), and that spend is real. Pass it whenever it's known.
+ */
+export function reportUsageError(args: {
+  requestId: string
+  model: string
+  subTool: UsageSubTool
+  durationMs: number
+  // Explicit `| undefined`: `exactOptionalPropertyTypes` is on, and callers pass
+  // the field through conditionally rather than omitting the key.
+  usage?: Usage | undefined
+  cost?: Cost | undefined
+}): Promise<void> {
+  return postRecord({
+    requestId: args.requestId,
+    model: args.model,
+    subTool: args.subTool,
+    durationMs: args.durationMs,
+    usage: args.usage ?? ZERO_USAGE,
+    cost: args.cost ?? EMPTY_COST,
+    outcome: 'error',
+  })
 }

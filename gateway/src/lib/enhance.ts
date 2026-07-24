@@ -353,8 +353,19 @@ function sumUsage(
   }
 }
 
-/** Thrown after the LLM's output fails validation twice (initial + one retry). */
-export class PlanUpstreamError extends Error {}
+/**
+ * Thrown after the LLM's output fails validation twice (initial + one retry).
+ * Carries the usage both attempts consumed — that spend is real and must still
+ * reach argo, or a planner that fails often looks free.
+ */
+export class PlanUpstreamError extends Error {
+  constructor(
+    message: string,
+    readonly usage: ChatCompletionUsage,
+  ) {
+    super(message)
+  }
+}
 
 export interface PlanLlmResult {
   plan: LlmPlan
@@ -388,7 +399,10 @@ export async function requestLlmPlan(messages: ChatMessage[]): Promise<PlanLlmRe
   const usage = sumUsage(first.usage, second.usage)
   if ('data' in secondResult) return { plan: secondResult.data, usage }
 
-  throw new PlanUpstreamError(`enhance model output failed validation twice: ${secondResult.error}`)
+  throw new PlanUpstreamError(
+    `enhance model output failed validation twice: ${secondResult.error}`,
+    usage,
+  )
 }
 
 const EMPTY_CHAT_USAGE: ChatCompletionUsage = {

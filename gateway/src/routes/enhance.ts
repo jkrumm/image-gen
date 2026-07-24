@@ -6,10 +6,24 @@ import {
   type Usage,
 } from '@image-gen/shared'
 import { env } from '../env.js'
-import { planFromRequest } from '../lib/enhance.js'
+import { planFromRequest, PlanUpstreamError, type ChatCompletionUsage } from '../lib/enhance.js'
 import { computeCost } from '../lib/pricing.js'
-import { reportUsage } from '../lib/usage.js'
+import { reportUsage, reportUsageError } from '../lib/usage.js'
 import { log } from '../lib/log.js'
+
+/**
+ * Chat-completions usage (prompt_tokens/completion_tokens) has no text/image
+ * split, unlike the image endpoints' `input_tokens_details` — this is a pure-text
+ * call, so `input_tokens_details` is left unset rather than guessed at. Already
+ * summed across both LLM calls if the plan needed a retry (`requestLlmPlan`).
+ */
+function toUsage(chat: ChatCompletionUsage): Usage {
+  return {
+    input_tokens: chat.prompt_tokens,
+    output_tokens: chat.completion_tokens,
+    total_tokens: chat.total_tokens,
+  }
+}
 
 export const enhanceRoutes = new Elysia().post(
   '/enhance',
@@ -23,21 +37,23 @@ export const enhanceRoutes = new Elysia().post(
     } catch (err) {
       const message = err instanceof Error ? err.message : 'upstream request failed'
       log('enhance.upstream_error', { error: message, requestId })
+      // A validation-retry failure still burned tokens on both attempts — report
+      // them, or a planner that fails often reads as free.
+      const spent = err instanceof PlanUpstreamError ? toUsage(err.usage) : undefined
+      void reportUsageError({
+        requestId,
+        model: env.ENHANCE_MODEL,
+        subTool: 'enhance',
+        durationMs: Math.round(performance.now() - t0),
+        usage: spent,
+        cost: spent ? computeCost(env.ENHANCE_MODEL, spent) : undefined,
+      })
       return status(502, { error: { message, type: 'upstream_error' } })
     }
 
     const latencyMs = Math.round(performance.now() - t0)
 
-    // Chat-completions usage (prompt_tokens/completion_tokens) has no
-    // text/image split, unlike the image endpoints' `input_tokens_details` —
-    // this is a pure-text call, so `input_tokens_details` is left unset
-    // rather than guessed at. Summed across both LLM calls if the plan
-    // needed a retry (see `requestLlmPlan`).
-    const usage: Usage = {
-      input_tokens: result.usage.prompt_tokens,
-      output_tokens: result.usage.completion_tokens,
-      total_tokens: result.usage.total_tokens,
-    }
+    const usage = toUsage(result.usage)
     // Priced from `pricing.ts`'s TEXT_RATES, not RATES — a text model, not an
     // image one. A model missing from that table still yields
     // `{ usd: null, source: 'none' }`, which argo renders as $0.

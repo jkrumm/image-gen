@@ -3,7 +3,7 @@ import { magicBytesValid } from './upstream.js'
 import { readSSEFrames, parseSSEFrame, mapPartialImageFrame } from './sse.js'
 import type { UpstreamCompletedData, UpstreamPartialImageData } from './sse.js'
 import { buildResponseEnvelope, EMPTY_USAGE } from './response.js'
-import { reportUsage, type UsageSubTool } from './usage.js'
+import { reportUsage, reportUsageError, type UsageSubTool } from './usage.js'
 import { log } from './log.js'
 
 export interface StreamRequestContext {
@@ -50,6 +50,19 @@ export async function* streamImageResponse(
   openUpstreamStream: () => Promise<Response>,
   context: StreamRequestContext,
 ): AsyncGenerator<StreamEvent> {
+  // Every exit that isn't a `completed` frame is a failure, and each one must
+  // still reach argo — otherwise `outcome` is permanently 'ok' and the error-rate
+  // view shows a service that has never failed rather than one nobody measures.
+  const fail = (err: unknown): StreamEvent => {
+    void reportUsageError({
+      requestId: context.id,
+      model: context.model,
+      subTool: context.subTool,
+      durationMs: Math.round(performance.now() - context.startedAt),
+    })
+    return errorFrame(err)
+  }
+
   let res: Response
   try {
     res = await openUpstreamStream()
@@ -57,12 +70,12 @@ export async function* streamImageResponse(
     log('stream.upstream_connect_error', {
       error: err instanceof Error ? err.message : String(err),
     })
-    yield errorFrame(err)
+    yield fail(err)
     return
   }
 
   if (!res.body) {
-    yield errorFrame(new Error('upstream returned no stream body'))
+    yield fail(new Error('upstream returned no stream body'))
     return
   }
 
@@ -82,7 +95,7 @@ export async function* streamImageResponse(
           (data.output_format as typeof context.outputFormat | undefined) ?? context.outputFormat
         const bytes = Buffer.from(data.b64_json, 'base64')
         if (!magicBytesValid(bytes, format)) {
-          yield errorFrame(new Error(`Generated image is not a valid ${format} (bad magic bytes).`))
+          yield fail(new Error(`Generated image is not a valid ${format} (bad magic bytes).`))
           return
         }
 
@@ -117,9 +130,9 @@ export async function* streamImageResponse(
       }
     }
 
-    yield errorFrame(new Error('upstream stream ended without a completed event'))
+    yield fail(new Error('upstream stream ended without a completed event'))
   } catch (err) {
     log('stream.error', { error: err instanceof Error ? err.message : String(err) })
-    yield errorFrame(err)
+    yield fail(err)
   }
 }

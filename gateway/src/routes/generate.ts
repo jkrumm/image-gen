@@ -14,7 +14,7 @@ import {
   type GenerateImagesParams,
 } from '../lib/upstream.js'
 import { buildResponseFromUpstream } from '../lib/response.js'
-import { reportUsage } from '../lib/usage.js'
+import { reportUsage, reportUsageError } from '../lib/usage.js'
 import { streamImageResponse, type StreamRequestContext } from '../lib/streaming.js'
 import { log } from '../lib/log.js'
 import { buildUpstreamErrorBody } from '../lib/moderation-error.js'
@@ -84,9 +84,15 @@ export const generateRoutes = new Elysia().post(
     try {
       upstream = await generateImages(upstreamParams)
     } catch (err) {
-      const body = buildUpstreamErrorBody(err)
-      log('generate.upstream_error', { error: body.error.message, code: body.error.code })
-      return status(502, body)
+      const errorBody = buildUpstreamErrorBody(err)
+      log('generate.upstream_error', { error: errorBody.error.message, code: errorBody.error.code })
+      void reportUsageError({
+        requestId,
+        model,
+        subTool: 'generate',
+        durationMs: Math.round(performance.now() - t0),
+      })
+      return status(502, errorBody)
     }
     const latencyMs = Math.round(performance.now() - t0)
 

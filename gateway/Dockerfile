@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build context is the REPO ROOT (monorepo — needs shared/ + gateway/ for bun
 # workspace resolution). Build with: docker build -f gateway/Dockerfile .
 #
@@ -12,7 +13,10 @@ COPY package.json bun.lock ./
 COPY shared/package.json shared/package.json
 COPY gateway/package.json gateway/package.json
 COPY app/package.json app/package.json
-RUN bun install --frozen-lockfile --production --ignore-scripts --filter='@image-gen/gateway'
+# Cache mount: bun's global install cache (root's HOME here — this stage has no
+# USER). It lives outside the layer, so it speeds rebuilds without growing the image.
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+  bun install --frozen-lockfile --production --ignore-scripts --filter='@image-gen/gateway'
 
 COPY shared/tsconfig.json shared/tsconfig.json
 COPY shared/src shared/src

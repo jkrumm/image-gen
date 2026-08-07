@@ -23,7 +23,7 @@ The redesign turns the app from an API console into a studio with a brain. Full 
 
 ## Waves (each ships working software; wave 1 may ship in slices, but the concept must stand across all of them)
 
-### Wave 0 — Verify the floor (human, MacBook)
+### Wave 0 — Verify the floor (human; written when MacBook-only, superseded — the Mac mini also runs `tauri dev` directly, see `CLAUDE.md`)
 Drive the already-built-but-never-run MVP surface (`docs/handover.md`): plain generate, streamed generate, multi-ref edit, masked inpaint, library→edit seed, `/enhance` curl. Fix what breaks. Commit the MVP. **Nothing in waves 1+ builds on unverified runtime behavior.** Also probe: `moderation=low` on `/images/edits` per model; `moderation_details` presence in our proxy's wrapped errors.
 
 ### Wave 1 — The brain and the merge
@@ -41,7 +41,7 @@ Screenshot + CSS distillation sources; chained-edit drift guard; saved searches;
 
 ## Key constraints (live-probed; details `docs/research/endpoint-verification.md` + `CLAUDE.md`)
 
-- Capability matrix (`MODEL_CAPABILITIES`) is the single source of truth: gpt-image-2 = custom sizes, no transparency, rejects `input_fidelity`; 1.5 = presets-only, transparency, fidelity; mini = cheap. Transparency auto-routes to 1.5. The Plan's derivations must round-trip through `rules.ts`, never re-derive.
+- Capability matrix (`MODEL_CAPABILITIES`) is the single source of truth: gpt-image-2 = custom sizes, no transparency, rejects `input_fidelity`; 1.5 = presets-only, transparency, fidelity; mini = cheap. ~~Transparency auto-routes to 1.5.~~ **Superseded**: the single-model retirement made `gpt-image-2` the only generatable model (`IMAGE_MODELS`), and `validateBackgroundForModel()` hard-rejects `background: 'transparent'` outright — there is no fallback to reroute to. The Plan's derivations must round-trip through `rules.ts`, never re-derive.
 - Cost: low ≈ $0.006, high ≈ $0.211 (35.8×); streaming +$0.002 flat; upstream may send fewer partials than requested — never wait on a fixed count.
 - Upstream wraps user errors in 503 `"..._user_error"`; `moderation_blocked` is one of them — never retried.
 - Gateway stays stateless; all state in `~/Pictures/ImageGen/` (sidecars authoritative, human-browsable, index rebuildable). Public repo: placeholders only, secrets via 1Password templates.

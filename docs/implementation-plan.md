@@ -5,16 +5,16 @@ Execution plan for the waves defined in `PRD.md`, structured for multi-agent fan
 ## Standing facts to bake into every brief
 
 - `shared/src/rules.ts` is the single source of truth for model routing/size/fidelity validation. The enhancer LLM *proposes* settings; `rules.ts` *disposes*. Never re-derive rules in a view or route.
-- Capability matrix: gpt-image-2 = custom size / no transparency / rejects `input_fidelity`; 1.5 = presets-only / transparency / fidelity; mini = cheap. Transparency auto-routes to 1.5.
+- Capability matrix: gpt-image-2 = custom size / no transparency / rejects `input_fidelity`; 1.5 = presets-only / transparency / fidelity; mini = cheap. ~~Transparency auto-routes to 1.5.~~ **Superseded by the single-model retirement**: `IMAGE_MODELS` is `gpt-image-2` only, and `validateBackgroundForModel()` now hard-rejects `background: 'transparent'` — there is no fallback model to reroute to.
 - Upstream wraps 400-class user errors in HTTP 503 with `"type": "..._user_error"`; `moderation_blocked` is one; never retried. SSE event names are per-endpoint (`image_generation.*` vs `image_edit.*`) — match on suffix.
 - Costs: quality low ≈ $0.006, high ≈ $0.211 (35.8×), streaming flat +$0.002; upstream may deliver fewer partials than requested.
 - Validation: `bun run pre` + `cd gateway && bun test`. **There are no app-side tests; green typecheck ≠ working app** — say so in reports. Scope typechecks (`cd app && bunx tsc --noEmit -p tsconfig.app.json`) while other agents are in flight.
 - Probes: `cd gateway && secrets-run run --env-file=.env.local.tpl -- bun <scratch>/probe.ts`; scratch files never in the repo; elide `b64_json` when printing.
-- Runtime verification of anything Tauri (capabilities, plugin-http, canvas) happens on the MacBook only.
+- Runtime verification of anything Tauri (capabilities, plugin-http, canvas) happens on the MacBook only. **Superseded**: the day-to-day machine is now the Mac mini (GUI + cargo, `tauri dev` runs there directly — see `CLAUDE.md`); this was written before that was verified.
 
 ## Wave 0 — human gate (blocks everything)
 
-1. On the MacBook: `bun run dev`, drive the six handover scenarios (plain generate, streamed generate, 2-ref edit, masked inpaint, library→edit seed, `/enhance` curl). Fix what breaks; commit the MVP.
+1. On the MacBook (now: the Mac mini works too — see above): `bun run dev`, drive the six handover scenarios (plain generate, streamed generate, 2-ref edit, masked inpaint, library→edit seed, `/enhance` curl). Fix what breaks; commit the MVP.
 2. ~~Probe A~~ **done 2026-07-17**: `moderation=low` accepted on `/images/edits` (gpt-image-2 and 1.5).
 3. ~~Probe B~~ **done 2026-07-17**: `moderation_details` present (`moderation_stage`, coarse `categories`); 503 body is a string-prefixed wrapper — extract the embedded JSON. Our upstream is more permissive than public reports (celebrity portrait passed; living artist input-blocked; franchise character output-blocked) → pre-check is advisory.
 4. Results recorded in `docs/research/endpoint-verification.md` (Round 3). Only item 1 (driving the app) remains for wave 0.

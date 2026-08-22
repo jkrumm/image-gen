@@ -1,4 +1,5 @@
-import { Button, Group, Slider, Stack, Text } from '@mantine/core'
+import { Box, Button, Group, Slider, Stack, Text } from '@mantine/core'
+import { VX } from 'basalt-ui/tokens'
 import {
   useEffect,
   useImperativeHandle,
@@ -30,6 +31,15 @@ function exportInvertedMask(sourceCanvas: HTMLCanvasElement): Promise<Blob> {
     }, 'image/png')
   })
 }
+
+/**
+ * The brush colour written into the mask canvas's backing store. Not a design token and not
+ * theme-reactive on purpose: a canvas 2D context resolves `fillStyle` against nothing, so a
+ * `var(--vx-*)` string is silently dropped, and this value is *data* — only the alpha channel it
+ * produces is sent upstream (see `exportInvertedMask`). It is a saturated red so the painted
+ * region stays legible over arbitrary generated imagery in either colour scheme.
+ */
+const MASK_BRUSH = 'rgba(220, 38, 38, 1)' // theme-allow: canvas 2D cannot resolve a CSS custom property
 
 function hasAnyPaint(imageData: ImageData): boolean {
   const data = imageData.data
@@ -102,7 +112,7 @@ export function MaskCanvas({ ref, imageUrl, brushSize, onBrushSizeChange }: Mask
   function paintDot(point: { x: number; y: number }): void {
     const ctx = canvasRef.current?.getContext('2d')
     if (!ctx) return
-    ctx.fillStyle = 'rgba(220, 38, 38, 1)'
+    ctx.fillStyle = MASK_BRUSH
     ctx.beginPath()
     ctx.arc(point.x, point.y, brushSize / 2, 0, Math.PI * 2)
     ctx.fill()
@@ -112,7 +122,7 @@ export function MaskCanvas({ ref, imageUrl, brushSize, onBrushSizeChange }: Mask
   function paintLine(from: { x: number; y: number }, to: { x: number; y: number }): void {
     const ctx = canvasRef.current?.getContext('2d')
     if (!ctx) return
-    ctx.strokeStyle = 'rgba(220, 38, 38, 1)'
+    ctx.strokeStyle = MASK_BRUSH
     ctx.lineWidth = brushSize
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
@@ -183,13 +193,18 @@ export function MaskCanvas({ ref, imageUrl, brushSize, onBrushSizeChange }: Mask
 
   return (
     <Stack gap="xs">
-      <div style={{ position: 'relative', width: '100%', maxWidth: 480 }}>
+      <Box pos="relative" w="100%" maw={480}>
         <img
           ref={imgRef}
           src={imageUrl}
           onLoad={handleImageLoad}
           alt="Primary reference — paint the region to edit"
-          style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 8 }}
+          style={{
+            width: '100%',
+            height: 'auto',
+            display: 'block',
+            borderRadius: VX.radiusCard,
+          }}
         />
         {naturalSize && (
           <canvas
@@ -208,12 +223,12 @@ export function MaskCanvas({ ref, imageUrl, brushSize, onBrushSizeChange }: Mask
               height: '100%',
               opacity: 0.45,
               cursor: 'crosshair',
-              borderRadius: 8,
+              borderRadius: VX.radiusCard,
               touchAction: 'none',
             }}
           />
         )}
-      </div>
+      </Box>
       <Group gap="sm" align="center">
         <Text size="sm" c="dimmed">
           Brush size

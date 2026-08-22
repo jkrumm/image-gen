@@ -37,7 +37,7 @@ export function PlanRecord({ enhance }: PlanRecordProps) {
       {enhance.additions.length > 0 && (
         <Group gap={4} wrap="wrap">
           {enhance.additions.map((addition, index) => (
-            <Badge key={`${addition.slot}-${index}`} variant="outline" color="teal">
+            <Badge key={`${addition.slot}-${index}`} variant="outline" color="gray">
               {addition.slot}: {addition.text}
             </Badge>
           ))}

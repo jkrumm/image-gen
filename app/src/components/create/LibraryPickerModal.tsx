@@ -61,7 +61,7 @@ function PickerTile({ entry, onPick }: PickerTileProps) {
   const roles = [...new Set(entry.metadata.images.flatMap((image) => image.roles))]
 
   return (
-    <Card withBorder padding="sm" onClick={onPick} style={{ cursor: 'pointer' }}>
+    <Card padding="sm" onClick={onPick} style={{ cursor: 'pointer' }}>
       <Card.Section>
         {thumbnailSrc ? (
           <img

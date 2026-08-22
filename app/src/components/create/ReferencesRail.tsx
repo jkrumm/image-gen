@@ -2,6 +2,7 @@ import { EDIT_LIMITS, INPUT_IMAGE_MIME_TYPES } from '@image-gen/shared'
 import {
   ActionIcon,
   Badge,
+  Box,
   Button,
   Card,
   FileButton,
@@ -12,6 +13,7 @@ import {
   Title,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
+import { VX } from 'basalt-ui/tokens'
 import { useMemo, useRef, useState, type DragEvent } from 'react'
 import type { LibraryEntry } from '../../lib/library'
 import { LibraryPickerModal } from './LibraryPickerModal'
@@ -125,7 +127,7 @@ export function ReferencesRail({ items, onItemsChange, libraryEntries }: Referen
   }
 
   return (
-    <Card withBorder py="xs" px="sm">
+    <Card py="xs" px="sm">
       <Stack gap="md">
         <Group justify="space-between">
           <Title order={5}>References</Title>
@@ -136,13 +138,13 @@ export function ReferencesRail({ items, onItemsChange, libraryEntries }: Referen
           </Text>
         </Group>
 
-        <div
+        <Box
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleDrop}
+          p="xl"
           style={{
-            border: '1px dashed var(--vx-surface-border)',
-            borderRadius: 8,
-            padding: 24,
+            border: `1px dashed ${VX.surface.border}`,
+            borderRadius: VX.radiusCard,
           }}
         >
           <Stack gap="xs" align="center">
@@ -166,13 +168,13 @@ export function ReferencesRail({ items, onItemsChange, libraryEntries }: Referen
               </Button>
             </Group>
           </Stack>
-        </div>
+        </Box>
 
         {itemsWithUrls.length > 0 && (
           <SimpleGrid cols={{ base: 3, sm: 4, md: 6 }} spacing="sm">
             {itemsWithUrls.map((item, index) => (
               // theme-allow: square thumbnail needs a tight uniform padding, not the content-card xs/sm inset
-              <Card key={item.id} withBorder padding={4} pos="relative">
+              <Card key={item.id} padding={4} pos="relative">
                 <Badge
                   size="xs"
                   variant="filled"
@@ -187,7 +189,7 @@ export function ReferencesRail({ items, onItemsChange, libraryEntries }: Referen
                     width: '100%',
                     height: 96,
                     objectFit: 'cover',
-                    borderRadius: 4,
+                    borderRadius: VX.radiusCtrl,
                     display: 'block',
                   }}
                 />

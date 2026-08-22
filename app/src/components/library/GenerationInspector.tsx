@@ -12,6 +12,7 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
+import { VX } from 'basalt-ui/tokens'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { useEffect, useState } from 'react'
@@ -195,7 +196,7 @@ export function GenerationInspector({
                 <img
                   src={imageSrcs[index]}
                   alt={`${metadata.prompt} ${index + 1}`}
-                  style={{ maxWidth: 280, maxHeight: 280, borderRadius: 8 }}
+                  style={{ maxWidth: 280, maxHeight: 280, borderRadius: VX.radiusCard }}
                 />
               ) : (
                 <Skeleton height={200} width={200} />

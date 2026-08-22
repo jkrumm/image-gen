@@ -98,7 +98,7 @@ export function PlanCard({
   const banner = planResult ? MODE_BANNER[planResult.mode_applied] : null
 
   return (
-    <Card withBorder py="xs" px="sm">
+    <Card py="xs" px="sm">
       <Stack gap="md">
         {deltaMode && (
           <Alert color="blue" variant="light" title="Iterating from a previous generation">
@@ -156,7 +156,7 @@ export function PlanCard({
                 checked={rawMode}
                 onChange={(event) => onRawModeChange(event.currentTarget.checked)}
                 size="sm"
-                mt={20}
+                mt="lg"
               />
             </Tooltip>
           </Group>
@@ -212,7 +212,7 @@ export function PlanCard({
             </Text>
             <Group gap={4} wrap="wrap">
               {planResult.additions.map((addition, index) => (
-                <Badge key={`${addition.slot}-${index}`} variant="outline" color="teal">
+                <Badge key={`${addition.slot}-${index}`} variant="outline" color="gray">
                   {addition.slot}: {addition.text}
                 </Badge>
               ))}

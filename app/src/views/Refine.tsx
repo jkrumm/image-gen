@@ -35,7 +35,7 @@ const INITIAL_RECIPE: Recipe = recipeSchema.parse({
 
 /** Fixed neutral matte — enough contrast to reveal a background-removal halo without favoring
  * light or dark artwork. */
-const MATTE_COLOR = '#808080'
+const MATTE_COLOR = '#808080' // theme-allow: an inspection backdrop must stay scheme-independent
 
 /** Fraction-space distance (relative to image width) within which an alt-click removes a seed. */
 const SEED_REMOVE_RADIUS = 0.06
@@ -228,7 +228,7 @@ export function Refine({ seed }: RefineProps) {
           />
         </Stack>
 
-        <Card withBorder style={{ flex: '1 1 360px', minWidth: 320 }}>
+        <Card style={{ flex: '1 1 360px', minWidth: 320 }}>
           <Accordion
             multiple
             defaultValue={['crop', 'background', 'transform', 'shape', 'pad', 'export']}

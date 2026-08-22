@@ -4,7 +4,7 @@
  * never fight over the same gesture, see `Refine.tsx`'s `panInteractive`. Coordinate mapping goes
  * through `pointToPixel` (the pure helper extracted from `Edit.tsx`'s `MaskCanvas.pointFromEvent`),
  * so this component owns no pointer math of its own. */
-import { Center, Text } from '@mantine/core'
+import { Box, Center, Text } from '@mantine/core'
 import { VX } from 'basalt-ui/tokens'
 import {
   useEffect,
@@ -127,7 +127,7 @@ export function RefineCanvas({
     position: 'relative',
     width: '100%',
     maxWidth: 512,
-    borderRadius: 8,
+    borderRadius: VX.radiusCard,
     overflow: 'hidden',
     ...(displayImage
       ? { aspectRatio: `${displayImage.width} / ${displayImage.height}` }
@@ -144,7 +144,7 @@ export function RefineCanvas({
       : 'default'
 
   return (
-    <div
+    <Box
       className={mode === 'checkerboard' ? 'image-gen-checkerboard' : undefined}
       style={wrapperStyle}
     >
@@ -168,30 +168,27 @@ export function RefineCanvas({
           />
           {interactive &&
             seeds.map((seed, index) => (
-              // eslint-disable-next-line react/no-array-index-key -- seeds have no stable id, only insertion order
-              <div
+              <Center
+                // eslint-disable-next-line react/no-array-index-key -- seeds have no stable id, only insertion order
                 key={index}
+                w={18}
+                h={18}
+                fz={VX.text.micro}
+                fw={600}
                 style={{
                   position: 'absolute',
                   left: `${seed.x * 100}%`,
                   top: `${seed.y * 100}%`,
                   transform: 'translate(-50%, -50%)',
-                  width: 18,
-                  height: 18,
-                  borderRadius: '50%',
-                  background: 'var(--vx-accent-9, #4c6ef5)',
-                  color: 'white',
-                  fontSize: VX.text.micro,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  borderRadius: VX.radiusPill,
+                  background: VX.accentFill,
+                  color: VX.onAccent,
                   pointerEvents: 'none',
-                  border: '2px solid white',
+                  border: `2px solid ${VX.onAccent}`,
                 }}
               >
                 {index + 1}
-              </div>
+              </Center>
             ))}
         </>
       ) : (
@@ -201,6 +198,6 @@ export function RefineCanvas({
           </Text>
         </Center>
       )}
-    </div>
+    </Box>
   )
 }

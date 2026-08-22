@@ -34,7 +34,7 @@ export async function loadImageData(source: Blob | File): Promise<RgbaImage> {
 
     const [r, g, b, a] = imageData.data
     void logDebug(
-      `loadImageData: decoded ${canvas.width}x${canvas.height}, corner pixel rgba(${r},${g},${b},${a})`,
+      `loadImageData: decoded ${canvas.width}x${canvas.height}, corner pixel rgba(${r},${g},${b},${a})`, // theme-allow: log message, not a style value
     )
 
     return imageData

@@ -34,7 +34,7 @@ export function GenerationCard({ entry, onOpen }: GenerationCardProps) {
   const starred = metadata.images.some((image) => image.starred)
 
   return (
-    <Card withBorder padding="sm" onClick={onOpen} style={{ cursor: 'pointer' }}>
+    <Card padding="sm" onClick={onOpen} style={{ cursor: 'pointer' }}>
       <Card.Section pos="relative">
         {thumbnailSrc ? (
           <img
@@ -66,7 +66,7 @@ export function GenerationCard({ entry, onOpen }: GenerationCardProps) {
               {metadata.model}
             </Badge>
             {metadata.kind === 'edit' && (
-              <Badge size="sm" variant="outline" color="grape">
+              <Badge size="sm" variant="outline" color="blue">
                 edit
               </Badge>
             )}

@@ -21,6 +21,7 @@ import {
 import {
   Alert,
   Badge,
+  Box,
   Button,
   Card,
   Group,
@@ -35,6 +36,7 @@ import {
 import { notifications } from '@mantine/notifications'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { EmptyState } from 'basalt-ui'
+import { VX } from 'basalt-ui/tokens'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CreateSeed } from '../App'
 import { MaskCanvas, type MaskCanvasHandle } from '../components/create/MaskCanvas'
@@ -674,7 +676,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
           w={200}
         />
         {isEdit && (
-          <Badge variant="light" color="grape" mt={20}>
+          <Badge variant="light" color="blue" mt="lg">
             edit — {references.length} reference{references.length === 1 ? '' : 's'}
           </Badge>
         )}
@@ -721,7 +723,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
       <ReferencesRail items={references} onItemsChange={setReferences} libraryEntries={entries} />
 
       {firstReferenceWithUrl && (
-        <Card withBorder py="xs" px="sm">
+        <Card py="xs" px="sm">
           <Stack gap="sm">
             <Group justify="space-between">
               <Title order={5}>Mask (optional)</Title>
@@ -740,7 +742,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
         </Card>
       )}
 
-      <Card withBorder py="xs" px="sm">
+      <Card py="xs" px="sm">
         <Stack gap="md">
           <Select
             label="Preset"
@@ -871,20 +873,25 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
       </Card>
 
       {loading && activeJob?.preview && (
-        <Card withBorder py="xs" px="sm">
+        <Card py="xs" px="sm">
           <Stack gap="xs">
             <Badge variant="light">Generating…</Badge>
             <img
               src={activeJob.preview.dataUrl}
               alt="Live preview"
-              style={{ maxWidth: 320, maxHeight: 320, borderRadius: 8, display: 'block' }}
+              style={{
+                maxWidth: 320,
+                maxHeight: 320,
+                borderRadius: VX.radiusCard,
+                display: 'block',
+              }}
             />
           </Stack>
         </Card>
       )}
 
       {result && (
-        <Card withBorder py="xs" px="sm">
+        <Card py="xs" px="sm">
           <Stack gap="md">
             <Group justify="space-between">
               <Title order={5}>Result</Title>
@@ -895,17 +902,17 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
 
             <Group gap="md" wrap="wrap">
               {result.images.map((image, index) => (
-                <div
+                <Box
                   // eslint-disable-next-line react/no-array-index-key -- images have no stable id
                   key={index}
-                  style={{ borderRadius: 8, overflow: 'hidden' }}
+                  style={{ borderRadius: VX.radiusCard, overflow: 'hidden' }}
                 >
                   <img
                     src={`data:image/${image.format};base64,${image.b64_json}`}
                     alt={`Result ${index + 1}`}
                     style={{ maxWidth: 320, maxHeight: 320, display: 'block' }}
                   />
-                </div>
+                </Box>
               ))}
             </Group>
 

@@ -101,7 +101,7 @@ function DerivativeGroupTile({
   const title = isFolder ? group.key : (representative.label ?? representative.filename)
 
   return (
-    <Card withBorder padding="sm">
+    <Card padding="sm">
       <Card.Section>
         {thumbnailSrc ? (
           <img

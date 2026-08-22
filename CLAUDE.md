@@ -108,11 +108,11 @@ Streaming overhead is flat per request, not per partial: asking for 3 partials d
 
 ## Validation surface (know what "green" actually proves)
 
-- **`bun run pre`** = `format:check && lint && typecheck` — run it before proposing a commit. Plus `cd gateway && bun test` (63 tests).
+- **`bun run pre`** = `format:check && lint && typecheck` — run it before proposing a commit. Plus `bun test` (402 tests). `bunx basalt-ui check-theme` is the palette guard on top (`.github/workflows/check.yml` runs both); it reads `basalt.roots` from the root `package.json`, which points at `app/src` — without that key it silently scans zero files in this workspace layout.
 - **oxlint + oxfmt**, matching the basalt-ui/argo ecosystem (never Biome/ESLint/Prettier). Root `.oxlintrc.json` **extends the shipped basalt preset** (`./node_modules/basalt-ui/configs/oxlint.json` — oxlint rejects bare specifiers, so the relative path is required), which brings the `basalt/*` design-guard rules. Style is basalt's: single quotes, no semicolons, printWidth 100.
-- `basalt-ui` is a root devDependency **purely so lint can resolve that preset** — bun doesn't hoist `app/`'s copy to root. Same trick argo uses. It's a `file:` link that is **copied**, not symlinked: after editing basalt-ui, `rm -rf node_modules/.bun/basalt-ui@file* node_modules/basalt-ui && bun install` or consumers keep seeing the old copy.
-- **App-side unit tests exist and are substantial** — 315 tests total (42 shared / 108 gateway / **165 app**). What's still missing is a *component/integration* harness: pure logic (lib functions, stores, replay/lineage/roles) is well covered; anything touching the actual Tauri runtime (fs capabilities, `plugin-http`, canvas pointer math, the webview) is not exercised by any test. Say that precisely — don't claim "no app-side tests" (wrong) or imply green tests cover runtime behavior (also wrong).
-- Consequently: anything touching the Tauri runtime is **unverified until someone runs the app**, either manually or via the `osascript`/`screencapture` GUI-automation path above. Say so plainly in reports rather than implying green typecheck+tests means working — a dot-glob fs-scope bug (below) shipped invisible to all 315 tests and was fatal at first boot.
+- `basalt-ui` is **pinned to the published npm version** in both `package.json` (root, purely so lint can resolve that preset — bun doesn't hoist `app/`'s copy to root; same trick argo uses) and `app/package.json`. Keep the two in lockstep. It was a `file:` link to `../basalt-ui` until 2026-08-22; that is deliberately gone. `file:` resolves the local `dist/`, which nothing here builds, and `APP_SOURCES` in the Makefile does not cover it — so `make app-status` would certify the installed `.app` as "matches your working tree" while the UI came from a stale sibling checkout. It did: the resolved copy sat at 1.1.1 while the source tree was at 1.19.1. Upgrade via `/upgrade-deps`, then `bunx basalt-ui sync` + `bunx basalt-ui check-theme`.
+- **App-side unit tests exist and are substantial** — 402 tests total (68 shared / 108 gateway / **226 app**). What's still missing is a *component/integration* harness: pure logic (lib functions, stores, replay/lineage/roles) is well covered; anything touching the actual Tauri runtime (fs capabilities, `plugin-http`, canvas pointer math, the webview) is not exercised by any test. Say that precisely — don't claim "no app-side tests" (wrong) or imply green tests cover runtime behavior (also wrong).
+- Consequently: anything touching the Tauri runtime is **unverified until someone runs the app**, either manually or via the `osascript`/`screencapture` GUI-automation path above. Say so plainly in reports rather than implying green typecheck+tests means working — a dot-glob fs-scope bug (below) shipped invisible to all of them and was fatal at first boot.
 - Root `bun run typecheck` covers all workspaces — but **don't run it while another agent is mid-flight in a package you don't own**; you'll see their in-flight errors and "fix" phantoms. Scope it: `cd app && bunx tsc --noEmit -p tsconfig.app.json`.
 - Driving the real app needs Rust + a GUI. The owner's Mac mini has both — `tauri dev` runs there directly.
 
@@ -124,3 +124,46 @@ Streaming overhead is flat per request, not per partial: asking for 3 partials d
 - **Two different `capabilities.json` files.** `src-tauri/gen/schemas/capabilities.json` is the *schema of every possible permission* — grepping it proves nothing. The **granted** set is `src-tauri/target/debug/build/image-gen-*/out/capabilities.json` (newest by mtime). Verify there.
 - **zod v4 keeps `.shape` through `.superRefine()`** — object schemas with refinements still expose `.shape.field`, so `metadata.ts`'s "reuse the contract's field schemas" pattern survives.
 - **`tauri-plugin-fs` defaults to `require_literal_leading_dot: true` on unix** — verified in `tauri-plugin-fs-2.5.1/src/commands.rs:1559` (`.unwrap_or(cfg!(unix))`). Consequence: a glob like `$PICTURE/ImageGen/**` **cannot match** anything under `.imagegen/...` — glob's leading-dot exclusion applies even mid-path. Every dot-prefixed directory needs its own explicit scope entries — both `$PICTURE/ImageGen/.imagegen` *and* `$PICTURE/ImageGen/.imagegen/**` — on every fs permission that touches it. This shipped broken once: the whole `.imagegen/` state dir (drafts, projects, styles) threw `forbidden path` on first boot, making draft persistence structurally impossible until `app/src-tauri/capabilities/default.json` was fixed.
+
+<!-- basalt:begin 1.19.1 -->
+
+## basalt-ui (managed — do not hand-edit)
+
+Scaffolded by `bunx basalt-ui init` and refreshed by `bunx basalt-ui sync` (run it after a basalt-ui
+upgrade; `basalt-ui sync --check` gates drift in CI). This block is framework-owned — edit `DESIGN.md`
+or the `basalt-*` rules instead; manual changes here are overwritten on the next sync.
+
+**Stack:** React 19 + Mantine v9, themed by `basalt-ui` (`BasaltProvider` + `createBasaltTheme`).
+Colors come from the three-tier `--vx-*` token system — read `VX.*` / a `defineSeries` token,
+never a raw hex/`rgb()`/`hsl()`. Charts are visx via `basalt-ui/charts`: every single-plot chart
+composes `CartesianChart` (owns margins, scales, axes, grid, cursor, tooltip — draw only marks);
+legends/tooltip rows are DERIVED from `series`, never hand-authored (`basalt/hand-rolled-plot` +
+`basalt/chart-legend-literal` enforce both); `DualPanel`/`Donut`/`Heatmap` are the declared
+exceptions. Add a kind on the third repeat, don't loosen the primitives. `basalt-ui/charts` and
+`basalt-ui/tokens` are Mantine-free internally (a framework invariant, not something your own app
+code must follow) — never import `@visx/*` outside a `charts/` directory (oxlint-enforced).
+Toolchain is oxlint + oxfmt (no ESLint/Biome/Prettier) and `basalt-ui check-theme` guards the
+palette. Runtime is Bun.
+
+**Before guessing an import, check the installed package's machine docs**:
+`node_modules/basalt-ui/llms.txt` (per-subpath import map), `node_modules/basalt-ui/AGENTS.md`, or
+run `bunx basalt-ui info --json`.
+
+**DESIGN.md is law.** `./DESIGN.md` (imported below) records this app's palette identity and series
+dictionary. Precedence: **DESIGN.md > `basalt-*` rules > skills.** When building or restyling any
+UI, that law wins over habit, over library defaults, and over a skill's instinct. The design/charts
+workflows are the managed skills in `.claude/skills/` (`/basalt-design`, `/basalt-charts`) — they
+defer to DESIGN.md.
+
+@./DESIGN.md
+
+**Restraint override (supersedes `/frontend-design`).** This app is a calm, data-dense,
+dark-first professional surface — not a showcase. Ignore `/frontend-design`'s push toward a "BOLD
+aesthetic direction", gradient meshes, noise/grain, and dramatic motion. Here: the shipped
+three-font system (Nunito Sans body, Hubot Sans condensed headings, JetBrains Mono for every
+numeral/micro-label), depth via a whisper shadow + 1px ring (`shadow-card` on panels,
+`shadow-raised` on controls — never a decorative drop shadow, never a hover lift), neutral
+zinc-by-default with the single saturated accent spent only when earned (trend /
+signal / categorical separation). Restraint **is** the identity.
+
+<!-- basalt:end -->

@@ -13,7 +13,7 @@ Deep comparison for a macOS-only, personal image-generation studio app built by 
 ## Why Tauri v2
 
 - Stable since 2024-10, current line 2.9.x, 120+ plugins, externally audited, CrabNebula-backed — abandonment risk very low.
-- Full React + Tailwind reuse (basalt-ui consumable), 3–15 MB bundles, 20–100 MB idle RAM.
+- Full React reuse (basalt-ui consumable — Mantine v9, **no Tailwind** since basalt's 2026-07 zinc redesign), 3–15 MB bundles, 20–100 MB idle RAM.
 - Official plugins cover everything this app needs without meaningful Rust: `tauri-plugin-fs`, `tauri-plugin-dialog` (native open/save + drag-drop), `tauri-plugin-http`, `tauri-plugin-updater`. Typical apps ship with <100 lines of Rust.
 - Mature `.dmg`/`.app` packaging, signing, and notarization via the Tauri CLI.
 

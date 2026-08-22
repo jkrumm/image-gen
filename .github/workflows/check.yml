@@ -1,0 +1,31 @@
+# basalt-ui consumer CI seed — placed at .github/workflows/check.yml by `basalt-ui init`,
+# then owned by the consumer (sync never touches it again). Mirrors the basalt-ui gate
+# order: frozen install -> lint + theme guard -> doctrine drift gate -> format check.
+# `basalt-ui check-theme` is the palette guard shipped by basalt-ui (fails on raw
+# color literals / off-identity accents that bypass the --vx-* token system); it reads its
+# source roots from the `basalt.roots` key in package.json.
+# `basalt-ui sync --check` fails when the basalt-managed files (rules, skills, the
+# CLAUDE block) have drifted from the installed basalt-ui version.
+# The format/typecheck/test steps run this repo's own scripts rather than the seeded
+# single-package `src/**` globs, which match nothing in this bun-workspace layout.
+name: check
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bunx basalt-ui check-theme
+      - run: bunx basalt-ui sync --check
+      - run: bun run format:check
+      - run: bun run typecheck
+      - run: bun test

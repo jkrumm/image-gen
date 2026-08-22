@@ -1,0 +1,5 @@
+# Seeded by basalt-ui init — you own this file; sync never touches it again.
+# The extends target supplies oxlint + oxfmt + check-theme pre-commit jobs and
+# auto-updates with the basalt-ui package. Add your own commands alongside.
+extends:
+  - node_modules/basalt-ui/configs/lefthook.yml

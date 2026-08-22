@@ -17,8 +17,13 @@
     "gateway",
     "app"
   ],
+  "basalt": {
+    "roots": [
+      "app/src"
+    ]
+  },
   "devDependencies": {
-    "basalt-ui": "file:../basalt-ui/packages/basalt-ui",
+    "basalt-ui": "1.19.1",
     "oxfmt": "0.53.0",
     "oxlint": "1.68.0"
   }

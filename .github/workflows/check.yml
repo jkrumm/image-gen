@@ -24,9 +24,11 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run lint
-      - run: bunx basalt-ui doctor
-      - run: bunx basalt-ui check-theme
-      - run: bunx basalt-ui sync --check
+      # The local bin, never `bunx` — `bunx` serves a CACHED copy it does not re-resolve, so
+      # it can answer for a different version than the one being built against.
+      - run: ./node_modules/.bin/basalt-ui doctor
+      - run: ./node_modules/.bin/basalt-ui check-theme
+      - run: ./node_modules/.bin/basalt-ui sync --check
       - run: bun run format:check
       - run: bun run typecheck
       - run: bun test

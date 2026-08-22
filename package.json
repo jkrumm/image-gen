@@ -23,7 +23,7 @@
     ]
   },
   "devDependencies": {
-    "basalt-ui": "1.22.0",
+    "basalt-ui": "1.23.0",
     "oxfmt": "0.53.0",
     "oxlint": "1.68.0"
   }

@@ -125,12 +125,13 @@ Streaming overhead is flat per request, not per partial: asking for 3 partials d
 - **zod v4 keeps `.shape` through `.superRefine()`** — object schemas with refinements still expose `.shape.field`, so `metadata.ts`'s "reuse the contract's field schemas" pattern survives.
 - **`tauri-plugin-fs` defaults to `require_literal_leading_dot: true` on unix** — verified in `tauri-plugin-fs-2.5.1/src/commands.rs:1559` (`.unwrap_or(cfg!(unix))`). Consequence: a glob like `$PICTURE/ImageGen/**` **cannot match** anything under `.imagegen/...` — glob's leading-dot exclusion applies even mid-path. Every dot-prefixed directory needs its own explicit scope entries — both `$PICTURE/ImageGen/.imagegen` *and* `$PICTURE/ImageGen/.imagegen/**` — on every fs permission that touches it. This shipped broken once: the whole `.imagegen/` state dir (drafts, projects, styles) threw `forbidden path` on first boot, making draft persistence structurally impossible until `app/src-tauri/capabilities/default.json` was fixed.
 
-<!-- basalt:begin 1.20.0 -->
+<!-- basalt:begin 1.21.0 -->
 
 ## basalt-ui (managed — do not hand-edit)
 
-Scaffolded by `bunx basalt-ui init` and refreshed by `bunx basalt-ui sync` (run it after a basalt-ui
-upgrade; `basalt-ui sync --check` gates drift in CI). This block is framework-owned — edit `DESIGN.md`
+Scaffolded by `bunx basalt-ui init` (the one command that legitimately predates the install) and
+refreshed by the locally installed `basalt-ui sync` after every upgrade; `basalt-ui sync --check`
+gates drift in CI. This block is framework-owned — edit `DESIGN.md`
 or the `basalt-*` rules instead; manual changes here are overwritten on the next sync.
 
 **Stack:** React 19 + Mantine v9, themed by `basalt-ui` (`BasaltProvider` + `createBasaltTheme`).
@@ -145,9 +146,14 @@ code must follow) — never import `@visx/*` outside a `charts/` directory (oxli
 Toolchain is oxlint + oxfmt (no ESLint/Biome/Prettier) and `basalt-ui check-theme` guards the
 palette. Runtime is Bun.
 
-**Before guessing an import, check the installed package's machine docs**:
-`node_modules/basalt-ui/llms.txt` (per-subpath import map), `node_modules/basalt-ui/AGENTS.md`, or
-run `bunx basalt-ui info --json`.
+**Before guessing an import, read the installed package's machine docs — `llms.txt` (per-subpath
+import map) and `AGENTS.md`, at the install directory.** That is `./node_modules/basalt-ui` only on
+a single-package app. In a workspace, basalt resolves under the package that depends on it
+(`packages/<name>/node_modules/basalt-ui`), and the repo root may have no copy at all. Run
+`basalt-ui doctor` — its `basalt-resolves` line prints the resolved install dir and version; read
+the two files there. Invoke the CLI through the **locally installed** bin (the `lint:basalt` script
+seeded by `init` shows the path); `bunx basalt-ui` fetches a second copy from npm and can answer
+for a different version than the one you are building against.
 
 **DESIGN.md is law.** `./DESIGN.md` (imported below) records this app's palette identity and series
 dictionary. Precedence: **DESIGN.md > `basalt-*` rules > skills.** When building or restyling any

@@ -39,7 +39,7 @@ function exportInvertedMask(sourceCanvas: HTMLCanvasElement): Promise<Blob> {
  * produces is sent upstream (see `exportInvertedMask`). It is a saturated red so the painted
  * region stays legible over arbitrary generated imagery in either colour scheme.
  */
-const MASK_BRUSH = 'rgba(220, 38, 38, 1)' // theme-allow: canvas 2D cannot resolve a CSS custom property
+const MASK_BRUSH = 'rgba(220, 38, 38, 1)' // theme-allow raw-color-fn — canvas 2D cannot resolve a CSS custom property
 
 function hasAnyPaint(imageData: ImageData): boolean {
   const data = imageData.data

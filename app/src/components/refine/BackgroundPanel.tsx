@@ -36,11 +36,6 @@ export function BackgroundPanel({
   seedColor,
   transparentPct,
 }: BackgroundPanelProps) {
-  // The sampled background pixel, rendered both as a swatch and as a readout. Neither is a palette
-  // choice — they REPORT a measurement taken from the image, so the literal is the value itself.
-  const seedSwatch = seedColor ? `rgb(${seedColor[0]}, ${seedColor[1]}, ${seedColor[2]})` : '' // theme-allow: sampled pixel, not a design token
-  const seedLabel = seedColor ? `Seed rgb(${seedColor.join(', ')})` : 'Seed color unavailable' // theme-allow: readout text, not a style value
-
   function handleMode(value: string): void {
     const choice = value as BackgroundModeChoice
     if (choice === 'off') {
@@ -65,14 +60,17 @@ export function BackgroundPanel({
       {background.enabled && (
         <>
           <Group gap="xs">
+            {/* The sampled background pixel, rendered both as a swatch and as a readout. Neither
+                is a palette choice — they REPORT a measurement taken from the image, so the
+                literal IS the value. */}
             {seedColor && (
               <ColorSwatch
-                color={seedSwatch} // theme-allow: paints the sampled pixel itself — measured data, not a palette choice
+                color={`rgb(${seedColor[0]}, ${seedColor[1]}, ${seedColor[2]})`}
                 size={20}
               />
             )}
             <Text size="xs" c="dimmed">
-              {seedLabel}
+              {seedColor ? `Seed rgb(${seedColor.join(', ')})` : 'Seed color unavailable'}
               {transparentPct !== null && ` · ${(transparentPct * 100).toFixed(0)}% transparent`}
             </Text>
           </Group>

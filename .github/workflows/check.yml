@@ -24,6 +24,7 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run lint
+      - run: bunx basalt-ui doctor
       - run: bunx basalt-ui check-theme
       - run: bunx basalt-ui sync --check
       - run: bun run format:check

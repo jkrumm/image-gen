@@ -18,7 +18,12 @@ APP_SOURCES := app/src app/src-tauri/src app/src-tauri/capabilities shared/src \
 op_read = secrets-run read $(1) 2>/dev/null || timeout 15 op read $(1) --account tkrumm </dev/null 2>/dev/null
 
 BUNDLE    := app/src-tauri/target/release/bundle/macos/ImageGen.app
-INSTALLED := /Applications/ImageGen.app
+# /Applications is not writable on an MDM-managed Mac, and `sudo cp` for a
+# personal app is the wrong trade — macOS treats ~/Applications as a first-class
+# app folder (Spotlight, Launchpad, `open -a` all find it). Pick the shared one
+# when we may write it, ours otherwise; override with INSTALL_DIR=.
+INSTALL_DIR ?= $(shell [ -w /Applications ] && echo /Applications || echo $(HOME)/Applications)
+INSTALLED := $(INSTALL_DIR)/ImageGen.app
 STAMP     := $(INSTALLED)/Contents/Resources/.codesum
 BUNDLE_ID := com.jkrumm.image-gen
 APP_LOG   := $(HOME)/Library/Logs/$(BUNDLE_ID)/imagegen.log
@@ -114,6 +119,7 @@ app: ## Build the release bundle, install it to /Applications, prove it matches 
 	    exit 1; \
 	  fi; \
 	fi
+	mkdir -p "$(INSTALL_DIR)"
 	rm -rf "$(INSTALLED)"
 	cp -R "$(BUNDLE)" "$(INSTALLED)"
 	@bun scripts/codesum.ts $(APP_SOURCES) > "$(STAMP)"

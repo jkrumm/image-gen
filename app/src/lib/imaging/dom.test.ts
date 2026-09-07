@@ -2,7 +2,7 @@
  * Only `pointToPixel` is covered here — it's the one pure, DOM-free export of `dom.ts`.
  * `loadImageData`/`toPngBlob`/`toImageData` need a real `document`/canvas/`createImageBitmap`,
  * none of which exist under `bun test`; those stay UNVERIFIED until someone runs the app (see
- * `dom.ts`'s module doc and the handover notes). This file is also excluded from
+ * `dom.ts`'s module doc). This file is also excluded from
  * `tsconfig.test.json`'s `tsc` project (see that file) since importing `dom.ts` pulls in DOM lib
  * types (`HTMLCanvasElement`, `ImageData`, …) that project's `lib` doesn't have — `bun test` still
  * runs it fine because it type-strips rather than type-checks.

@@ -82,7 +82,7 @@ type CreateProps = {
 }
 
 /**
- * Merged Compose+Edit surface (concept §2, docs/implementation-plan.md G4). Generate-vs-edit is
+ * Merged Compose+Edit surface (docs/concept.md §2). Generate-vs-edit is
  * derived, not chosen: references attached routes to `/edit`, none routes to `/generate`. The
  * Plan card is the heart — brief in, crafted prompt + derived settings + warnings + cost out,
  * always shown before a run and always editable (the central taboo: never silently rewrite).

@@ -19,12 +19,12 @@ The redesign turns the app from an API console into a studio with a brain. Full 
 - MCP facade, multi-user, cloud state, public exposure — **except delivery of finished assets via image-share (Share/Publish from the Library inspector)**, which is a deliberate, scoped carve-out: HTTP to image-share only, no generic S3/SMB/SSH delivery connectors, no in-app public exposure of anything but an image a user explicitly published.
 - Style strength sliders, lineage graph canvases, embeddings/semantic search, auto-tagging, chat-shaped enhancement, in-app playbook editing, moderation simulators (rejected with rationale in `docs/concept.md` §9).
 - SQLite in the first waves — in-memory index over sidecars; SQLite is the named escape hatch.
-- SVG vectorization and gpt-image-2+matting transparency remain post-MVP fast-follows (handover open decisions).
+- SVG vectorization and transparency (gpt-image-2 + local matting) are not scheduled — status lives in `CLAUDE.md` → *The studio is single-model*.
 
 ## Waves (each ships working software; wave 1 may ship in slices, but the concept must stand across all of them)
 
-### Wave 0 — Verify the floor (human; written when MacBook-only, superseded — the Mac mini also runs `tauri dev` directly, see `CLAUDE.md`)
-Drive the already-built-but-never-run MVP surface (`docs/handover.md`): plain generate, streamed generate, multi-ref edit, masked inpaint, library→edit seed, `/enhance` curl. Fix what breaks. Commit the MVP. **Nothing in waves 1+ builds on unverified runtime behavior.** Also probe: `moderation=low` on `/images/edits` per model; `moderation_details` presence in our proxy's wrapped errors.
+### Wave 0 — Verify the floor (human, on the MacBook — done 2026-07-21)
+Drive the MVP surface: plain generate, streamed generate, multi-ref edit, masked inpaint, library→edit seed, `/enhance` curl. Fix what breaks. Commit the MVP. **Nothing in waves 1+ builds on unverified runtime behavior.** Also probe: `moderation=low` on `/images/edits` per model; `moderation_details` presence in our proxy's wrapped errors.
 
 ### Wave 1 — The brain and the merge
 - `shared/playbook/` (split from `docs/prompting-playbook.md`) + `PLAYBOOK_VERSION`; contract v2 schemas (plan request/response, sidecar schema 2 types).

@@ -7,7 +7,7 @@ interface Rate {
 }
 
 /**
- * USD per 1M tokens (OpenAI direct pricing, see docs/research/image-api.md).
+ * USD per 1M tokens (OpenAI direct pricing, mid-2026; re-verify against the vendor page before trusting a number here).
  *
  * Keyed by `KnownImageModel`, not `ImageModel`: pricing is applied to usage
  * *records*, which are historical. Generation is single-model today, but the

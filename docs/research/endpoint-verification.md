@@ -65,7 +65,7 @@ data: {"created_at":…,"type":"image_generation.completed","b64_json":"…","ba
 
 The **final image and `usage` arrive inside the `completed` frame** — a streamed request has no separate response body. There is no image-index field (streaming is n=1 only). Upstream may send **fewer partials than requested** when generation is fast — never block waiting for a fixed count.
 
-### Corrections to `image-api.md` (dated snapshot, now partly stale)
+### Corrections to the July 2026 desk research (`image-api.md`, since deleted — these are the surviving facts)
 
 1. `/images/edits` is **not** broken for GPT Image models anymore.
 2. Custom resolutions are **not** restricted to `/images/generations`; they work on `/images/edits` too, for gpt-image-2.
@@ -78,7 +78,7 @@ The vendor proxy returns **HTTP 503** for upstream 400-class validation failures
 
 ## Round 3 — moderation probe (2026-07-17)
 
-Wave-0 probes for the studio redesign (`docs/implementation-plan.md`). All against our own upstream, gpt-image-2 unless noted, quality low.
+Wave-0 probes for the studio redesign (`PRD.md`). All against our own upstream, gpt-image-2 unless noted, quality low.
 
 1. **`moderation=low` is accepted on `/images/edits`** by both gpt-image-2 and gpt-image-1.5 (200). The historical gpt-image-1 "unsupported on edits" limitation does not apply here.
 2. **`moderation_details` exists and passes through.** A blocked request returns the usual 503-wrapped string; the embedded JSON contains `code: "moderation_blocked"`, `type: "image_generation_user_error"`, and `moderation_details: { moderation_stage: "input"|"output", categories: ["other"] }`. The 503 body is a **string with a `[OpenAI Vendor Group Key StatusCode: BadRequest] ` prefix before the JSON** — extract the JSON substring; do not parse the body directly. Categories observed so far are coarse (`"other"`).

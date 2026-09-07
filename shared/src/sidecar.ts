@@ -48,8 +48,8 @@ export const MODERATION_STAGES = ['input', 'output'] as const
 export type ModerationStage = (typeof MODERATION_STAGES)[number]
 
 /** Delivery targets a generation can be shared/published to. Currently just the private
- * image-share layer (docs/handover.md's Phase B "Delivery" feature) — HTTP to image-share only,
- * never a generic multi-target adapter (that's Phase C, out of scope here). */
+ * image-share layer (PRD.md non-goals: the one delivery carve-out) — HTTP to image-share only,
+ * never a generic multi-target adapter. */
 export const PUBLICATION_TARGETS = ['image-share'] as const
 export type PublicationTarget = (typeof PUBLICATION_TARGETS)[number]
 

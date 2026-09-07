@@ -72,7 +72,7 @@ export const GPT_IMAGE_2_SIZE = {
   maxEdge: 3839,
 } as const
 
-/** Upstream limits for the edit path, from docs/research/image-api.md. */
+/** Upstream limits for the edit path (16 references, 50 MB each, 4 MB alpha-PNG mask). */
 export const EDIT_LIMITS = {
   maxImages: 16,
   maxImageBytes: 50 * 1024 * 1024,

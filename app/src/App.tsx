@@ -13,7 +13,7 @@ import { Library } from './views/Library'
 import { Refine } from './views/Refine'
 
 /**
- * Seeds the Create surface from the Library (docs/implementation-plan.md G5, Task 2). Replaces the
+ * Seeds the Create surface from the Library (docs/concept.md §2). Replaces the
  * former `ComposerSeed`/`EditorSeed` split with one shape carrying an explicit `op` so Create knows
  * *why* it was seeded rather than inferring it from which fields happen to be present:
  *

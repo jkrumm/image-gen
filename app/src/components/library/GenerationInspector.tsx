@@ -79,7 +79,7 @@ type GenerationInspectorProps = {
 /**
  * The Library inspector (docs/concept.md §2): outputs, the Plan record, the lineage panel, a
  * roles/star editor and use-as trio per image, and the generation-level actions — Tweak / Re-run /
- * Promote (finally distinct, docs/implementation-plan.md G5 Task 1) and Refine.
+ * Promote (each genuinely distinct — Tweak navigates seeded, the other two enqueue) and Refine.
  */
 export function GenerationInspector({
   entry,

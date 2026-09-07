@@ -26,8 +26,8 @@ import { requestWithRetry } from './upstream.js'
 import { log } from './log.js'
 
 /**
- * The `/enhance` v2 "Plan" brain — see docs/concept.md §7 and
- * docs/implementation-plan.md G2. Compiles the versioned playbook into a
+ * The `/enhance` v2 "Plan" brain — see docs/concept.md §7. Compiles the
+ * versioned playbook into a
  * system prompt, asks the enhance model for a single structured JSON plan,
  * then does the part the LLM must never be trusted with: settings resolved
  * through `rules.ts`, a verbatim containment check, cost estimate, and the
@@ -92,7 +92,7 @@ function wordCount(text: string): number {
 }
 
 /**
- * docs/concept.md §7 / implementation-plan.md: brief word count <25 -> full,
+ * docs/concept.md §7: brief word count <25 -> full,
  * 25-100 -> gaps, >100 -> off (passthrough). `request.mode` set to anything
  * but `auto` always wins. The word count is taken from whichever brief-shaped
  * text this round actually carries — `brief` for a new plan, `delta` for an

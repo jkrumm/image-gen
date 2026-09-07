@@ -18,7 +18,7 @@ import { z } from 'zod'
  * write arbitrary binary blobs outside `library.ts`'s own save paths without touching
  * `app/src/lib/**` (out of this surface's ownership this wave). Everything else — brief, prompt,
  * settings, pinned overrides, delta/lineage context, intent/project/style-guide selection —
- * survives a restart; attached references do not. Flagged in the G4b handover as a follow-up.
+ * survives a restart; attached references do not (known follow-up).
  *
  * `model` and `background` stay deliberately WIDE (`KNOWN_IMAGE_MODELS`, including `transparent`)
  * even though neither is selectable any more. A draft written before the studio went

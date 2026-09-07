@@ -85,3 +85,34 @@ Wave-0 probes for the studio redesign (`PRD.md`). All against our own upstream, 
 3. **Our upstream is more permissive than the public OpenAI API reports suggest.** A photorealistic named-celebrity portrait generated fine (200) — public reports call this a reliable block. A living-artist style prompt blocked at **input** stage; a franchise character (Mickey Mouse) passed input, generated, and blocked at **output** stage. Calibration consequence: the enhancer pre-check is *advisory* — it predicts public-API behavior, our endpoint may allow more; warn, don't hard-refuse, except for genuine policy hard walls.
 4. **Quirk: `/images/edits` with `size: "auto"` returned `1254x1254`** from a 1024×1024 input+mask (gpt-image-2) — a non-preset size that is not even a multiple of 16, and it does *not* match the input dimensions. Reproduced in a real app run 2026-07-19 (`~/Pictures/ImageGen/2026-07-19_13-45-43_vmow`): the Edit view defaults to `sizeChoice: 'auto'` and the gateway forwards `"auto"` verbatim — it does **not** inject a concrete size — so the odd size reaches disk. The inpaint still aligned correctly (upstream maps the mask onto its own chosen output), so this is cosmetic for the single edit but a hazard downstream (next point).
 5. **`size` recorded from an `auto` edit is truthful but NOT replayable.** `gateway/src/lib/response.ts` records `upstream.size ?? requestedSize`, so the sidecar's `params.size` is the *actual* returned dimensions. Re-sending `1254x1254` as a request 400s: `503 [OpenAI Vendor Group Key StatusCode: BadRequest] "Invalid size '1254x1254'. Width and height must both be divisible by 16."` (probed 2026-07-19). **Consequence for Wave-1 G4:** Re-run (verbatim) / Promote must snap `params.size` through `rules.ts` (or fall back to `"auto"`) before replay — replaying a recorded auto-edit size verbatim will fail. The clean fix is for the app to derive a concrete divisible-by-16 size for edits instead of sending `"auto"`.
+
+## Round 4 — per-model capability and cost tables (moved here from CLAUDE.md, still 2026-07-16 measurements)
+
+`MODEL_CAPABILITIES` in `shared/src/contract.ts` is the single source of truth these tables describe; `CLAUDE.md` keeps only the operating gotchas, not the numbers.
+
+- **Capabilities are per-model, not per-endpoint.** Each fact below holds identically on `/images/generations` and `/images/edits`.
+- gpt-image-2 accepts **arbitrary `WxH`** (multiples of 16, ratio ≤ 3:1, 655,360–8,294,400 px, max edge < 3840) on **both** endpoints, including 2560×1440 — so custom sizes are always available in the studio. *(Historical: `gpt-image-1.5`/`-mini` are presets-only on both. `snapSizeForModel(model: KnownImageModel, size)` is the replay chokepoint and snaps legacy-model sizes into gpt-image-2's envelope.)*
+- gpt-image-2 rejects **`input_fidelity`** outright ("does not support the parameter") — it is locked to high internally, so never send it. It is an *edits-only* parameter; `/images/generations` rejects it as unknown for every model. *(Historical: `gpt-image-1.5` accepts it — that's why old sidecars carry it.)*
+- *Historical:* gpt-image-1.5 **does** support transparent backgrounds. This is why 6 of the 9 sidecars on disk carry `background: transparent`, and why the read path must keep accepting that value forever.
+- `/v1/images/edits` **works** with gpt-image-2 (multipart, `image[]` for multiple refs). The old openai-node#1844 400 bug is fixed — the Responses API detour is no longer needed (it is proxied and works, but only earns its keep for multi-turn).
+- Streaming passes through on **both** endpoints, and is **n=1 only** ("Streaming is only supported with n=1"). SSE event names are the one per-endpoint exception (see Round 2 above). The final image *and* `usage` arrive inside the `completed` frame; upstream may send fewer partials than requested.
+- `n` up to 10 works on **all three** models (write-ups claiming 1.5/mini are limited to n=1 are wrong here).
+- GPT Image models always return `b64_json`; usage tokens are in every response (surface cost per generation).
+
+### The painted-checkerboard failure mode (live bug, both models)
+
+If the prompt text asks for "isolated on a transparent background" but the request actually sends `background: "opaque"`, the model doesn't error — it **paints a fake transparency checkerboard into the opaque pixels**. Verified on both gpt-image-2 and gpt-image-1.5: output had `hasAlpha: no`, PNG colortype 2 (RGB), with a visible checkerboard baked in. Prompt text and the `background` parameter can silently disagree and produce garbage that *looks* transparent at a glance. This also means any future background-removal/matting step would inherit painted checkerboard pixels rather than real alpha — always check `hasAlpha`/colortype on output rather than trusting the image visually. Now that every request is `opaque`, the playbook rule "never write 'transparent background' into prompt text" is a flat prohibition and is load-bearing, not cosmetic — there is no longer any request shape in which those words are correct.
+
+### Cost shape (measured 2026-07-16, gpt-image-2 @ 1024×1024)
+
+Drives the UX defaults — don't re-litigate these from intuition. **These anchors are gpt-image-2-specific, not universal** — cost scales per model, not just per quality/size. Measured on gpt-image-1.5 at `low`/1024²: ~429 output tokens/image, ~2.2× the gpt-image-2 anchor below — applying the gpt-image-2 numbers to gpt-image-1.5 under-quotes by ~2.2×. (`shared/src/cost.ts` owns the anchor constants; treat any single cross-model anchor there as a bug.)
+
+| | output tokens | ~USD | note |
+|-|-|-|-|
+| `quality: low` | 196 | $0.006 | drafting tier |
+| `quality: high` | 7,024 | $0.211 | **35.8× low** — why quality stays adjustable |
+| streaming overhead | **+77 flat** | +$0.002 | +39% on low, **+1% on high** — why previews default ON |
+
+Streaming overhead is flat per request, not per partial: asking for 3 partials delivered **1** (upstream skips them when generation is fast). Never build UI that waits for a fixed partial count.
+
+**Measured cross-model comparison** (same prompt, `low`, `n=4`, 1024×1024): gpt-image-2 opaque = **$0.02625**; gpt-image-1.5 transparent = **$0.057764**. gpt-image-2 is ~2.2× cheaper for the equivalent job — a real factor in the opaque-vs-transparent routing decision, not just a token-count curiosity.

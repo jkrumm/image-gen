@@ -180,6 +180,7 @@ The LLM proposes; **`rules.ts` disposes** — settings are validated server-side
 | No embeddings/auto-tagging/semantic search | Vision pass over library | Prompt FTS + roles is the retrieval budget at N=1 |
 | Promote is always a human click | Auto quality escalation | Spending 36× is a decision, not a default |
 | No moderation oracle | Calibrated block simulator | Heuristics + LLM opinion with confidence language; hard walls refuse, gray zones probe |
+| basalt-ui pinned to published npm version | `file:../basalt-ui` symlink | `file:` resolves the local `dist/`, which nothing here builds, and `APP_SOURCES` in the Makefile doesn't cover it — so `make app-status` certified the installed `.app` as tree-matching while the UI actually came from a stale sibling checkout (resolved copy sat at 1.1.1 against a 1.19.1 source tree). Gone since 2026-08-22; upgrade via `/upgrade-deps` + `bunx basalt-ui sync`. |
 
 ## 10. Long-term trajectory (designed-for, not built)
 

@@ -8,9 +8,11 @@
     "test": "bun run --filter '*' test",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
+    "check:theme": "./node_modules/.bin/basalt-ui check-theme",
+    "check:sync": "./node_modules/.bin/basalt-ui sync --check",
     "format": "oxfmt 'shared/**' 'gateway/**' 'app/**' 'scripts/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --write",
     "format:check": "oxfmt 'shared/**' 'gateway/**' 'app/**' 'scripts/**' '!app/src-tauri/gen/**' '!app/src-tauri/target/**' '!**/dist/**' --check",
-    "pre": "bun run format:check && bun run lint && bun run typecheck"
+    "pre": "bun run format:check && bun run lint && bun run check:theme && bun run check:sync && bun run typecheck"
   },
   "workspaces": [
     "shared",
@@ -23,7 +25,7 @@
     ]
   },
   "devDependencies": {
-    "basalt-ui": "1.25.0",
+    "basalt-ui": "1.29.2",
     "oxfmt": "0.53.0",
     "oxlint": "1.68.0"
   }

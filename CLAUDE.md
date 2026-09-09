@@ -88,9 +88,9 @@ These come from probing the upstream we actually call, not from vendor docs — 
 
 ## Validation surface (know what "green" actually proves)
 
-- **`bun run pre`** = `format:check && lint && typecheck` — run it before proposing a commit. Plus `bun test` (402 tests). `bunx basalt-ui check-theme` is the palette guard on top (`.github/workflows/check.yml` runs both); it reads `basalt.roots` from the root `package.json`, which points at `app/src`; since 1.20 `bunx basalt-ui doctor` hard-fails when that resolves to zero files, so the two can no longer disagree. Every `theme-allow` must name its rule id — `theme-allow <rule-id> — <reason>`; a bare one warns (`theme-allow-unscoped`) and a first word naming no rule waives nothing. A comment-ONLY line directly above the finding is honoured, so a JSX child no longer has to be hoisted to a const to be annotatable.
+- **`bun run pre`** = `format:check && lint && check:theme && check:sync && typecheck` — run it before proposing a commit. Plus `bun test` (402 tests). `check:theme` (`basalt-ui check-theme`, the palette + doctrine guard) and `check:sync` (`basalt-ui sync --check`, the managed-file drift gate) run through the LOCAL bin and are chained into `pre` so a basalt upgrade's guard promotions are reported locally, not first in CI (`.github/workflows/check.yml` runs the same two plus `doctor`); check-theme reads `basalt.roots` from the root `package.json`, which points at `app/src`; since 1.20 `bunx basalt-ui doctor` hard-fails when that resolves to zero files, so the two can no longer disagree. Every `theme-allow` must name its rule id — `theme-allow <rule-id> — <reason>`; a bare one warns (`theme-allow-unscoped`) and a first word naming no rule waives nothing. A comment-ONLY line directly above the finding is honoured, so a JSX child no longer has to be hoisted to a const to be annotatable.
 - **oxlint + oxfmt**, matching the basalt-ui/argo ecosystem (never Biome/ESLint/Prettier). Root `.oxlintrc.json` **extends the shipped basalt preset** (`./node_modules/basalt-ui/configs/oxlint.json` — oxlint rejects bare specifiers, so the relative path is required), which brings the `basalt/*` design-guard rules. Style is basalt's: single quotes, no semicolons, printWidth 100.
-- `basalt-ui` is **pinned to the published npm version** in both `package.json` (root, purely so lint can resolve that preset — bun doesn't hoist `app/`'s copy to root; same trick argo uses) and `app/package.json`. Keep the two in lockstep — never a `file:` link (`docs/concept.md` §9 has the incident). Upgrade via `/upgrade-deps`, then `bunx basalt-ui sync` + `bunx basalt-ui check-theme`.
+- `basalt-ui` is **pinned to the published npm version** in both `package.json` (root, purely so lint can resolve that preset — bun doesn't hoist `app/`'s copy to root; same trick argo uses) and `app/package.json`. Keep the two in lockstep — never a `file:` link (`docs/concept.md` §9 has the incident). Upgrade via `/upgrade-deps`, then `./node_modules/.bin/basalt-ui sync` + `bun run pre` — the local bin, never `bunx`, which serves a cached copy that can answer for a different version than the one installed.
 - **App-side unit tests exist and are substantial** — 402 tests total (68 shared / 108 gateway / **226 app**). What's still missing is a *component/integration* harness: pure logic (lib functions, stores, replay/lineage/roles) is well covered; anything touching the actual Tauri runtime (fs capabilities, `plugin-http`, canvas pointer math, the webview) is not exercised by any test. Say that precisely — don't claim "no app-side tests" (wrong) or imply green tests cover runtime behavior (also wrong).
 - Consequently: anything touching the Tauri runtime is **unverified until someone runs the app on the MacBook** (`make app-run`). Say so plainly in reports rather than implying green typecheck+tests means working — a dot-glob fs-scope bug (below) shipped invisible to all of them and was fatal at first boot.
 - Root `bun run typecheck` covers all workspaces — but **don't run it while another agent is mid-flight in a package you don't own**; you'll see their in-flight errors and "fix" phantoms. Scope it: `cd app && bunx tsc --noEmit -p tsconfig.app.json`.
@@ -105,52 +105,43 @@ These come from probing the upstream we actually call, not from vendor docs — 
 - **zod v4 keeps `.shape` through `.superRefine()`** — object schemas with refinements still expose `.shape.field`, so `metadata.ts`'s "reuse the contract's field schemas" pattern survives.
 - **`tauri-plugin-fs` defaults to `require_literal_leading_dot: true` on unix** — verified in `tauri-plugin-fs-2.5.1/src/commands.rs:1559` (`.unwrap_or(cfg!(unix))`). Consequence: a glob like `$PICTURE/ImageGen/**` **cannot match** anything under `.imagegen/...` — glob's leading-dot exclusion applies even mid-path. Every dot-prefixed directory needs its own explicit scope entries — both `$PICTURE/ImageGen/.imagegen` *and* `$PICTURE/ImageGen/.imagegen/**` — on every fs permission that touches it. This shipped broken once: the whole `.imagegen/` state dir (drafts, projects, styles) threw `forbidden path` on first boot, making draft persistence structurally impossible until `app/src-tauri/capabilities/default.json` was fixed.
 
-<!-- basalt:begin 1.25.0 -->
+<!-- basalt:begin 1.29.2 -->
 
 ## basalt-ui (managed — do not hand-edit)
 
-Scaffolded by `bunx basalt-ui init` (the one command that legitimately predates the install) and
-refreshed by the locally installed `basalt-ui sync` after every upgrade; `basalt-ui sync --check`
-gates drift in CI. This block is framework-owned — edit `DESIGN.md`
-or the `basalt-*` rules instead; manual changes here are overwritten on the next sync.
+Placed by `bunx basalt-ui init`, refreshed by `basalt-ui sync` (`sync --check` gates drift in CI).
+Framework-owned: edit `DESIGN.md` or your own files — this block is overwritten on the next sync.
 
-**Stack:** React 19 + Mantine v9, themed by `basalt-ui` (`BasaltProvider` + `createBasaltTheme`).
-Colors come from the three-tier `--vx-*` token system — read `VX.*` / a `defineSeries` token,
-never a raw hex/`rgb()`/`hsl()`. Charts are visx via `basalt-ui/charts`: every single-plot chart
-composes `CartesianChart` (owns margins, scales, axes, grid, cursor, tooltip — draw only marks);
-legends/tooltip rows are DERIVED from `series`, never hand-authored (`basalt/hand-rolled-plot` +
-`basalt/chart-legend-literal` enforce both); `DualPanel`/`BandStrip`/`MirroredBars` declare
-themselves exceptions, and `Donut`/`Heatmap` render no plot-assembly element so the rule never
-fires on them. Add a kind on the third repeat, don't loosen the primitives. `basalt-ui/charts` and
-`basalt-ui/tokens` are Mantine-free internally (a framework invariant, not something your own app
-code must follow) — never import `@visx/*` outside a `charts/` directory (oxlint-enforced).
-Toolchain is oxlint + oxfmt (no ESLint/Biome/Prettier) and `basalt-ui check-theme` guards the
-palette. Runtime is Bun.
+**Stack:** React 19 + Mantine v9 themed by `basalt-ui` (`BasaltProvider` + `createBasaltTheme`), Bun,
+oxlint + oxfmt (no ESLint/Biome/Prettier), no Tailwind. Color is the three-tier `--vx-*` token system —
+`VX.*` or a series token, never a raw hex. Charts are visx via `basalt-ui/charts`; `check-theme` + the
+`basalt/*` oxlint rules are the teeth.
 
-**Before guessing an import, read the installed package's machine docs — `llms.txt` (per-subpath
-import map) and `AGENTS.md`, at the install directory.** That is `./node_modules/basalt-ui` only on
-a single-package app. In a workspace, basalt resolves under the package that depends on it
-(`packages/<name>/node_modules/basalt-ui`), and the repo root may have no copy at all. Run
-`basalt-ui doctor` — its `basalt-resolves` line prints the resolved install dir and version; read
-the two files there. Invoke the CLI through the **locally installed** bin (the `lint:basalt` script
-seeded by `init` shows the path); `bunx basalt-ui` fetches a second copy from npm and can answer
-for a different version than the one you are building against.
+**Precedence — the only statement of it.** Highest wins; a lower layer fills gaps and never
+overrides a higher one:
 
-**DESIGN.md is law.** `./DESIGN.md` (imported below) records this app's palette identity and series
-dictionary. Precedence: **DESIGN.md > `basalt-*` rules > skills.** When building or restyling any
-UI, that law wins over habit, over library defaults, and over a skill's instinct. The design/charts
-workflows are the managed skills in `.claude/skills/` (`/basalt-design`, `/basalt-charts`) — they
-defer to DESIGN.md.
+> consumer `DESIGN.md` (app deltas) > the six shipped `basalt-*` rules > the `basalt-*` skills
+
+**All six rules are law** — `basalt-{tokens,mantine,charts,state,controls,batteries}` in
+`.claude/rules/`, each with a generated `<!-- basalt:coverage -->` header naming what enforces it and
+what is only advisory. The skills (`/basalt-app`, `/basalt-design`, `/basalt-charts`) are METHOD, never law.
+
+**Run the LOCAL bin, not `bunx`** — `./node_modules/.bin/basalt-ui`, or a `package.json` script.
+`bunx` does not re-resolve a cached package, so it can answer for a version you upgraded away from;
+`init` is the one legitimate `bunx` invocation, because nothing is installed yet.
+
+**Before guessing an import, read the installed package's `llms.txt` and `AGENTS.md`** — at the
+install directory (in a workspace, under the depending package; `basalt-ui doctor` prints where).
 
 @./DESIGN.md
 
-**Restraint override (supersedes `/frontend-design`).** This app is a calm, data-dense,
-dark-first professional surface — not a showcase. Ignore `/frontend-design`'s push toward a "BOLD
-aesthetic direction", gradient meshes, noise/grain, and dramatic motion. Here: the shipped
-three-font system (Nunito Sans body, Hubot Sans condensed headings, JetBrains Mono for every
-numeral/micro-label), depth via a whisper shadow + 1px ring (`shadow-card` on panels,
-`shadow-raised` on controls — never a decorative drop shadow, never a hover lift), neutral
-zinc-by-default with the single saturated accent spent only when earned (trend /
-signal / categorical separation). Restraint **is** the identity.
+**Restraint override (supersedes `/frontend-design`).** This app is a calm, data-dense professional
+surface, not a showcase. Ignore the push toward a "BOLD aesthetic direction", gradient meshes,
+noise/grain and dramatic motion. Here: the shipped three-font system, depth from a whisper shadow
+with a 1px ring, neutral-by-default with the single accent spent only when earned — trend, signal,
+or genuine categorical separation. Restraint **is** the identity.
+
+**Chart-doctrine override.** A global `visx-charts` rule auto-loading on `**/charts/**` is generic
+non-basalt discipline; here `basalt-charts` supersedes it — compose `CartesianChart`.
 
 <!-- basalt:end -->

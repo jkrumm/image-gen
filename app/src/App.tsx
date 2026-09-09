@@ -1,8 +1,10 @@
 import type { GenerateRequestInput, GenerationParent } from '@image-gen/shared'
 import { ActionIcon, Group, ScrollArea, SegmentedControl, Stack, Text, Title } from '@mantine/core'
 import { EmptyState } from 'basalt-ui'
+import { money } from 'basalt-ui/format'
 import { Activity, useCallback, useEffect, useState } from 'react'
 import { QueueBar } from './components/QueueBar'
+import { SettingsIcon } from './components/SettingsIcon'
 import { SettingsModal } from './components/SettingsModal'
 import type { Recipe } from './lib/imaging/recipe'
 import { listGenerations, type LibraryEntry } from './lib/library'
@@ -98,6 +100,10 @@ export function App() {
         >
           <Title order={4}>ImageGen</Title>
           <Group gap="lg">
+            {/* The only sanctioned home for a view switcher is a PageBar/Section/WidgetHeader slot,
+                and this Tauri app mounts no BasaltShell and no PageBar; the shell-less PageBar would
+                move the whole window chrome to a two-row bar — a redesign, not this upgrade. */}
+            {/* theme-allow raw-selection-control control-outside-home — no shell, no PageBar here */}
             <SegmentedControl
               value={view}
               onChange={(value) => setView(value as View)}
@@ -108,14 +114,14 @@ export function App() {
               ]}
             />
             <Text size="sm" c="dimmed">
-              {entries.length} generations · ${totalCost.toFixed(2)}
+              {entries.length} generations · {money(totalCost, { currency: 'USD' })}
             </Text>
             <ActionIcon
               variant="subtle"
               onClick={() => setSettingsOpen(true)}
               aria-label="Settings"
             >
-              ⚙
+              <SettingsIcon />
             </ActionIcon>
           </Group>
         </Group>

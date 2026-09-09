@@ -100,10 +100,17 @@ export function App() {
         >
           <Title order={4}>ImageGen</Title>
           <Group gap="lg">
-            {/* The only sanctioned home for a view switcher is a PageBar/Section/WidgetHeader slot,
-                and this Tauri app mounts no BasaltShell and no PageBar; the shell-less PageBar would
-                move the whole window chrome to a two-row bar — a redesign, not this upgrade. */}
-            {/* theme-allow raw-selection-control control-outside-home — no shell, no PageBar here */}
+            {/* 1.30.0 makes a shell-less `PageBar` a reachable home, and it was measured against
+                this header: it does not fit. `PageBar.tabs` renders in ROW 2, under the title row,
+                so this one ~50px bar becomes two (~44 + 36) in a 100vh desktop window whose scarce
+                axis is vertical; `tabs` only accepts `ViewTabs`, whose `field` would mean a
+                `createLocalStore` for a four-value local switch (a raw control there is
+                `basalt/hand-rolled-filter`, an ERROR, not this warning); and the cost readout has
+                no slot at all, only the `kind: 'custom'` escape hatch. The deeper mismatch: these
+                are the app's TOP-LEVEL destinations, and `PageBar.tabs` models a page's sub-views —
+                basalt puts top-level nav in `BasaltShell`'s sidebar, which this window cannot take.
+                Since 1.30.0 one rule id waives both the AST and the text lane. */}
+            {/* theme-allow control-outside-home — top-level nav; PageBar row 2 is not its home */}
             <SegmentedControl
               value={view}
               onChange={(value) => setView(value as View)}

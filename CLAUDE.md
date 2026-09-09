@@ -105,7 +105,7 @@ These come from probing the upstream we actually call, not from vendor docs — 
 - **zod v4 keeps `.shape` through `.superRefine()`** — object schemas with refinements still expose `.shape.field`, so `metadata.ts`'s "reuse the contract's field schemas" pattern survives.
 - **`tauri-plugin-fs` defaults to `require_literal_leading_dot: true` on unix** — verified in `tauri-plugin-fs-2.5.1/src/commands.rs:1559` (`.unwrap_or(cfg!(unix))`). Consequence: a glob like `$PICTURE/ImageGen/**` **cannot match** anything under `.imagegen/...` — glob's leading-dot exclusion applies even mid-path. Every dot-prefixed directory needs its own explicit scope entries — both `$PICTURE/ImageGen/.imagegen` *and* `$PICTURE/ImageGen/.imagegen/**` — on every fs permission that touches it. This shipped broken once: the whole `.imagegen/` state dir (drafts, projects, styles) threw `forbidden path` on first boot, making draft persistence structurally impossible until `app/src-tauri/capabilities/default.json` was fixed.
 
-<!-- basalt:begin 1.30.1 -->
+<!-- basalt:begin 1.30.2 -->
 
 ## basalt-ui (managed — do not hand-edit)
 

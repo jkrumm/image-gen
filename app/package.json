@@ -26,6 +26,7 @@
     "@tauri-apps/plugin-log": "2.8.0",
     "@tauri-apps/plugin-opener": "2.5.4",
     "basalt-ui": "1.30.2",
+    "motion": "12.42.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "zod": "4.4.3"

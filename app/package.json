@@ -13,6 +13,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource-variable/hubot-sans": "5.2.8",
+    "@fontsource-variable/jetbrains-mono": "5.2.8",
+    "@fontsource-variable/nunito-sans": "5.2.7",
     "@image-gen/shared": "workspace:*",
     "@mantine/core": "9.4.1",
     "@mantine/hooks": "9.4.1",

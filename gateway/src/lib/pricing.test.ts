@@ -73,6 +73,19 @@ describe('computeCost', () => {
     expect(computeCost('gpt-image-2.5-flare', usage).usd).toBeCloseTo(expected, 10)
   })
 
+  // gpt-6-luna is priced from the OpenAI pricing page (not a live probe against
+  // our own endpoint) — see the TEXT_RATES comment. `gpt-5.6-luna` must survive
+  // unchanged alongside it.
+  test('gpt-6-luna prices from TEXT_RATES, and gpt-5.6-luna keeps its own separate rate', () => {
+    const usage: Usage = {
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+      total_tokens: 2_000_000,
+    }
+    expect(computeCost('gpt-6-luna', usage)).toEqual({ usd: 0.6, source: 'computed' })
+    expect(computeCost('gpt-5.6-luna', usage)).toEqual({ usd: 1.4, source: 'computed' })
+  })
+
   test('unknown model returns no cost', () => {
     const usage: Usage = { input_tokens: 100, output_tokens: 100, total_tokens: 200 }
     expect(computeCost('not-a-real-model', usage)).toEqual({ usd: null, source: 'none' })

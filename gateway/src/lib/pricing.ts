@@ -56,12 +56,19 @@ const RATES: Record<KnownImageModel, Rate> = {
  * modelpick/docs/decisions/model-configs.md. `glm-5.3-flash` is not
  * `ENHANCE_MODEL` today but priced here so a future switch (or a historical
  * row) doesn't silently report `usd: null`.
+ *
+ * `gpt-6-luna` is priced from the OpenAI official pricing page (short-context
+ * tier), not a live probe against our own endpoint — added 2026-09-23
+ * alongside the image-model migration, kept separate from (and not replacing)
+ * the still-measured `gpt-5.6-luna` row above; re-verify against a live probe
+ * before trusting it the way the rows above are trusted.
  */
 const TEXT_RATES: Record<string, Rate> = {
   'gpt-5.6': { text_in: 5.0, image_in: 5.0, out: 30.0 },
   'gpt-5.6-sol': { text_in: 5.0, image_in: 5.0, out: 30.0 },
   'gpt-5.6-terra': { text_in: 2.5, image_in: 2.5, out: 15.0 },
   'gpt-5.6-luna': { text_in: 0.2, image_in: 0.2, out: 1.2, cached_in: 0.02 },
+  'gpt-6-luna': { text_in: 0.1, image_in: 0.1, out: 0.5, cached_in: 0.01 },
   'deepseek-v4.1-flash': { text_in: 0.5, image_in: 0.5, out: 1.5, cached_in: 0.05 },
   'glm-5.3-flash': { text_in: 0.15, image_in: 0.15, out: 0.5, cached_in: 0.03 },
 }

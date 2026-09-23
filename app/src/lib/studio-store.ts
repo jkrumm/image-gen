@@ -5,7 +5,7 @@
  * calling `@tauri-apps/plugin-fs` inline (code-style.md: "ports and adapters... inject
  * dependencies rather than stacking test infrastructure"). Reading/writing `.imagegen/*.json`
  * outside a Tauri webview is otherwise untestable — `library.ts`/`derived.ts` have no test files
- * for exactly this reason (see the repo CLAUDE.md's validation-surface note); this port is what
+ * for exactly this reason (see the repo AGENTS.md's validation-surface note); this port is what
  * lets `studio-store.test.ts` pin the "missing file reads as absent, not throw" contract without
  * a Tauri runtime. Production code imports `studioStore`, the singleton bound to the real Tauri
  * adapter; tests build their own store via `createStudioStore()` with an in-memory fake.

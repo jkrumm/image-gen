@@ -1,6 +1,6 @@
 /**
  * `studio-store.ts` calls `@tauri-apps/plugin-fs`, which throws outside a Tauri webview — there is
- * no Tauri runtime in `bun test` (the repo CLAUDE.md's validation-surface note: "anything touching
+ * no Tauri runtime in `bun test` (the repo AGENTS.md's validation-surface note: "anything touching
  * the Tauri runtime is unverified until someone runs the app"). These tests exercise the module's
  * actual read/write/default/skip-invalid behavior through the injectable `StudioFs` port instead
  * of the real Tauri adapter, using an in-memory fake — they prove the IO logic and JSON contracts,

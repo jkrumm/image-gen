@@ -22,7 +22,7 @@ const BASE_PIXELS = 1024 * 1024
  * Output-token anchors measured at 1024x1024, per model — token output is
  * per-model, not a shared constant, so each model gets its own anchor set.
  *
- * gpt-image-2: all three anchors measured directly (CLAUDE.md "Cost shape"
+ * gpt-image-2: all three anchors measured directly (AGENTS.md "Cost shape"
  * table is gpt-image-2-specific — do not apply it to other models). `medium`
  * has no direct measurement; interpolated as the geometric mean of low/high.
  *
@@ -84,7 +84,7 @@ export interface EstimatedCost {
 
 /**
  * Estimates image-generation cost before a run, from the per-model anchors
- * above — see the "Cost shape" table in CLAUDE.md (gpt-image-2 only) and
+ * above — see the "Cost shape" table in AGENTS.md (gpt-image-2 only) and
  * `shared/playbook/settings.md`. Scales output tokens linearly with pixel
  * count relative to the 1024x1024 anchor. Linear-in-pixels is an
  * approximation, not an exact law (a measured gpt-image-1.5 data point at

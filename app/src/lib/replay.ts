@@ -5,7 +5,7 @@
  * `Library.tsx`, which is untestable without a Tauri runtime; everything that can be pure, is,
  * so the replay-request shape and (above all) the size-snap chokepoint are pinned by unit tests.
  *
- * The replay hazard (repo CLAUDE.md / the G5 brief): a recorded `params.size` is truthful but not
+ * The replay hazard (repo AGENTS.md / the G5 brief): a recorded `params.size` is truthful but not
  * necessarily replayable — gpt-image-2 returns non-16-divisible dimensions for `size: "auto"`
  * (observed live: 1024x1024 in -> 1254x1254 out), and re-sending that 400s upstream. Every
  * function here that turns a saved generation back into a request pipes the size through
@@ -85,7 +85,7 @@ export function requestFromMetadata(metadata: GenerationMetadata): RecordedReque
 }
 
 /**
- * The chokepoint every replay path must go through (repo CLAUDE.md's "replay hazard"). In order:
+ * The chokepoint every replay path must go through (repo AGENTS.md's "replay hazard"). In order:
  * retires a non-generatable model onto `DEFAULT_MODEL`, drops `background: 'transparent'` and
  * `input_fidelity` when the generatable model rejects them, then snaps the recorded size into
  * validity. `snapSizeForModel` is handed the *recorded* model — it resolves the generatable

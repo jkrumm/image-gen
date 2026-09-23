@@ -2,7 +2,7 @@
 
 The canonical prompting knowledge for this studio has moved to versioned markdown at `shared/playbook/` — two consumers: the gateway compiles it into the enhancer system prompt (`composePlaybookSystemPrompt` in `shared/src/playbook.ts`), and the app bundles + renders it in the in-app Playbook drawer (docs/concept.md §2, §8). This file is now the human-readable overview and index; edit the doctrine itself in `shared/playbook/`.
 
-Sources: OpenAI's official image-gen prompting guides, community practitioner consensus, and the leaked/published behavior of production prompt rewriters (DALL·E 3, Ideogram Magic Prompt, Leonardo, Krea). Research snapshots with citations live in the session archives; load-bearing API facts (capabilities, costs, moderation mechanics) are probe-verified against our own endpoint — see `CLAUDE.md` and `docs/research/endpoint-verification.md`.
+Sources: OpenAI's official image-gen prompting guides, community practitioner consensus, and the leaked/published behavior of production prompt rewriters (DALL·E 3, Ideogram Magic Prompt, Leonardo, Krea). Research snapshots with citations live in the session archives; load-bearing API facts (capabilities, costs, moderation mechanics) are probe-verified against our own endpoint — see `AGENTS.md` and `docs/research/endpoint-verification.md`.
 
 `PLAYBOOK_VERSION` (`shared/src/playbook.ts`) is bumped whenever a change here affects enhancer output; every generation's sidecar records which version produced it (docs/concept.md §6, §9 below).
 

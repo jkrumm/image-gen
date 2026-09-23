@@ -10,6 +10,7 @@ gateway/deploy
 PRD.md
 README.md
 CLAUDE.md
+AGENTS.md
 docs
 # Only app/package.json is needed (bun workspace resolution) — the rest of the
 # app (Tauri/React source, Rust build artifacts) is excluded. Docker can't

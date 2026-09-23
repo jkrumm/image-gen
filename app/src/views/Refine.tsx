@@ -25,7 +25,7 @@ import type { RgbaImage } from '../lib/imaging/types'
 
 /** UI-level defaults, deliberately different from `RECIPE_DEFAULTS` (the pipeline's own no-op
  * defaults): tolerance 16 / softness 30 are the values verified to clear a gpt-image-2 background
- * cleanly (see CLAUDE.md's load-bearing facts), and 0 min-area for speck removal means "off" —
+ * cleanly (see AGENTS.md's load-bearing facts), and 0 min-area for speck removal means "off" —
  * `removeSpecks(mask, 0)` is already an identity per its own doc, so no boolean toggle is needed. */
 const INITIAL_RECIPE: Recipe = recipeSchema.parse({
   v: 1,

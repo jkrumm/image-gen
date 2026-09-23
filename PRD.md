@@ -19,7 +19,7 @@ The redesign turns the app from an API console into a studio with a brain. Full 
 - MCP facade, multi-user, cloud state, public exposure — **except delivery of finished assets via image-share (Share/Publish from the Library inspector)**, which is a deliberate, scoped carve-out: HTTP to image-share only, no generic S3/SMB/SSH delivery connectors, no in-app public exposure of anything but an image a user explicitly published.
 - Style strength sliders, lineage graph canvases, embeddings/semantic search, auto-tagging, chat-shaped enhancement, in-app playbook editing, moderation simulators (rejected with rationale in `docs/concept.md` §9).
 - SQLite in the first waves — in-memory index over sidecars; SQLite is the named escape hatch.
-- SVG vectorization and transparency (gpt-image-2 + local matting) are not scheduled — status lives in `CLAUDE.md` → *The studio is single-model*.
+- SVG vectorization and transparency (gpt-image-2 + local matting) are not scheduled — status lives in `AGENTS.md` → *The studio is single-model*.
 
 ## Waves (each ships working software; wave 1 may ship in slices, but the concept must stand across all of them)
 
@@ -39,7 +39,7 @@ Drive the MVP surface: plain generate, streamed generate, multi-ref edit, masked
 ### Wave 3 — Sharpening (trajectory items promoted as reality demands)
 Screenshot + CSS distillation sources; chained-edit drift guard; saved searches; enhance eval corpus surfaced as few-shot context; named work-items/bench (concept §10) if multi-round work strains persisted drafts.
 
-## Key constraints (live-probed; details `docs/research/endpoint-verification.md` + `CLAUDE.md`)
+## Key constraints (live-probed; details `docs/research/endpoint-verification.md` + `AGENTS.md`)
 
 - Capability matrix (`MODEL_CAPABILITIES`) is the single source of truth: gpt-image-2 = custom sizes, no transparency, rejects `input_fidelity`; 1.5 = presets-only, transparency, fidelity; mini = cheap. ~~Transparency auto-routes to 1.5.~~ **Superseded**: the single-model retirement made `gpt-image-2` the only generatable model (`IMAGE_MODELS`), and `validateBackgroundForModel()` hard-rejects `background: 'transparent'` outright — there is no fallback to reroute to. The Plan's derivations must round-trip through `rules.ts`, never re-derive.
 - Cost: low ≈ $0.006, high ≈ $0.211 (35.8×); streaming +$0.002 flat; upstream may send fewer partials than requested — never wait on a fixed count.

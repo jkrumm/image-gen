@@ -156,6 +156,10 @@ export const usageSchema = z.object({
     .object({
       text_tokens: z.number().optional(),
       image_tokens: z.number().optional(),
+      // Chat-completions cache-read tokens (`prompt_tokens_details.cached_tokens`
+      // upstream) — a subset of `input_tokens`/`text_tokens`, not additive. Only
+      // the `/enhance` planner call populates this; image endpoints never do.
+      cached_tokens: z.number().optional(),
     })
     .optional(),
   output_tokens_details: z.record(z.string(), z.number()).optional(),

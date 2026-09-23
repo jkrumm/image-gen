@@ -14,14 +14,20 @@ import { log } from '../lib/log.js'
 /**
  * Chat-completions usage (prompt_tokens/completion_tokens) has no text/image
  * split, unlike the image endpoints' `input_tokens_details` — this is a pure-text
- * call, so `input_tokens_details` is left unset rather than guessed at. Already
- * summed across both LLM calls if the plan needed a retry (`requestLlmPlan`).
+ * call, so `text_tokens`/`image_tokens` are left unset rather than guessed at.
+ * `cached_tokens` does carry through (a subset of `prompt_tokens`, priced at the
+ * cached rate by `computeCost`). Already summed across both LLM calls if the
+ * plan needed a retry (`requestLlmPlan`).
  */
 function toUsage(chat: ChatCompletionUsage): Usage {
+  const cachedTokens = chat.prompt_tokens_details?.cached_tokens
   return {
     input_tokens: chat.prompt_tokens,
     output_tokens: chat.completion_tokens,
     total_tokens: chat.total_tokens,
+    ...(cachedTokens !== undefined
+      ? { input_tokens_details: { cached_tokens: cachedTokens } }
+      : {}),
   }
 }
 

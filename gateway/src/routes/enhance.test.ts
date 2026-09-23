@@ -4,6 +4,10 @@ import { describe, expect, test } from 'bun:test'
 process.env['API_SECRET'] ??= 'test-secret'
 process.env['OPENAI_BASE_URL'] ??= 'http://localhost:1'
 process.env['OPENAI_API_KEY'] ??= 'test-key'
+// Pinned explicitly so the assertion below tests the echo-back behaviour rather
+// than a second copy of env.ts's default — which is what let this test silently
+// encode 'gpt-5.6' and break when the default moved to a concrete model id.
+process.env['ENHANCE_MODEL'] ??= 'deepseek-v4.1-flash'
 
 const { enhanceRoutes } = await import('./enhance.js')
 const { planResponseSchema, estimateCost } = await import('@image-gen/shared')
@@ -19,11 +23,18 @@ function withMockedFetch(
   })
 }
 
-function chatCompletion(content: unknown, usage?: Record<string, number>): Response {
+function chatCompletion(
+  content: unknown,
+  usage?: Record<string, unknown>,
+  finishReason = 'stop',
+): Response {
   return new Response(
     JSON.stringify({
       choices: [
-        { message: { content: typeof content === 'string' ? content : JSON.stringify(content) } },
+        {
+          message: { content: typeof content === 'string' ? content : JSON.stringify(content) },
+          finish_reason: finishReason,
+        },
       ],
       usage: usage ?? { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     }),
@@ -76,7 +87,7 @@ describe('POST /enhance', () => {
       async () => {
         const res = await postEnhance({ brief: 'a lighthouse at dusk' })
         const parsed = planResponseSchema.parse(await res.json())
-        expect(parsed.enhance_model).toBe(process.env['ENHANCE_MODEL'] ?? 'gpt-5.6')
+        expect(parsed.enhance_model).toBe(process.env['ENHANCE_MODEL']!)
       },
     ))
 
@@ -262,4 +273,51 @@ describe('POST /enhance', () => {
         expect(res.status).toBe(502)
       },
     ))
+
+  describe('truncated / empty replies (finish_reason: length)', () => {
+    test('retries with double max_completion_tokens on a truncated reply, then succeeds', async () => {
+      const budgets: number[] = []
+      let callCount = 0
+      await withMockedFetch(
+        async (_input, init) => {
+          callCount++
+          const body = JSON.parse(String(init?.body)) as { max_completion_tokens: number }
+          budgets.push(body.max_completion_tokens)
+          if (callCount === 1) return chatCompletion('', undefined, 'length')
+          return chatCompletion(VALID_LLM_PLAN)
+        },
+        async () => {
+          const res = await postEnhance({ brief: 'a lighthouse at dusk' })
+          expect(res.status).toBe(200)
+          expect(callCount).toBe(2)
+          expect(budgets).toEqual([16000, 32000])
+        },
+      )
+    })
+
+    test('retries on empty content even when finish_reason is not reported as length', async () => {
+      let callCount = 0
+      await withMockedFetch(
+        async () => {
+          callCount++
+          if (callCount === 1) return chatCompletion('   ')
+          return chatCompletion(VALID_LLM_PLAN)
+        },
+        async () => {
+          const res = await postEnhance({ brief: 'a lighthouse at dusk' })
+          expect(res.status).toBe(200)
+          expect(callCount).toBe(2)
+        },
+      )
+    })
+
+    test('502s when the reply is still truncated after doubling the budget', async () =>
+      withMockedFetch(
+        async () => chatCompletion('', undefined, 'length'),
+        async () => {
+          const res = await postEnhance({ brief: 'a lighthouse at dusk' })
+          expect(res.status).toBe(502)
+        },
+      ))
+  })
 })

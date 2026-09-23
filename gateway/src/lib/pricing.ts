@@ -4,6 +4,8 @@ interface Rate {
   text_in: number
   image_in: number
   out: number
+  /** USD per 1M cache-read tokens. Only text (chat-completions) models expose this; omitted means no cache discount. */
+  cached_in?: number
 }
 
 /**
@@ -38,18 +40,31 @@ const RATES: Record<KnownImageModel, Rate> = {
  * rate. Vendor docs claim no bare `gpt-5.6` exists at all; the endpoint disagrees.
  * If the planner's cost ever looks off by an integer factor, re-probe first — the
  * alias could be re-pointed at another tier without notice.
+ *
+ * Rates below are measured 2026-09-13 against the IU unified endpoint's own
+ * `usage.cost`, USD per 1M tokens, superseding the earlier vendor-page-derived
+ * figures (`gpt-5.6-luna` was wrongly $1/$6; `deepseek-v4.1-flash` was wrongly
+ * $0.30/$1.20 with no cached rate) — see
+ * modelpick/docs/decisions/model-configs.md. `glm-5.3-flash` is not
+ * `ENHANCE_MODEL` today but priced here so a future switch (or a historical
+ * row) doesn't silently report `usd: null`.
  */
 const TEXT_RATES: Record<string, Rate> = {
   'gpt-5.6': { text_in: 5.0, image_in: 5.0, out: 30.0 },
   'gpt-5.6-sol': { text_in: 5.0, image_in: 5.0, out: 30.0 },
   'gpt-5.6-terra': { text_in: 2.5, image_in: 2.5, out: 15.0 },
-  'gpt-5.6-luna': { text_in: 1.0, image_in: 1.0, out: 6.0 },
+  'gpt-5.6-luna': { text_in: 0.2, image_in: 0.2, out: 1.2, cached_in: 0.02 },
+  'deepseek-v4.1-flash': { text_in: 0.5, image_in: 0.5, out: 1.5, cached_in: 0.05 },
+  'glm-5.3-flash': { text_in: 0.15, image_in: 0.15, out: 0.5, cached_in: 0.03 },
 }
 
 /**
  * Price one generation's usage. Uses `input_tokens_details` (text/image split)
- * when present; otherwise treats the whole input as text tokens. Unknown
- * models return `{ usd: null, source: 'none' }`.
+ * when present; otherwise treats the whole input as text tokens. Cache-read
+ * tokens (`input_tokens_details.cached_tokens`) are a *subset* of the text
+ * tokens already counted in `input_tokens`/`text_tokens` — they're split out
+ * and priced at `rate.cached_in`, falling back to the full text rate for a
+ * model with no cached rate. Unknown models return `{ usd: null, source: 'none' }`.
  */
 export function computeCost(model: string, usage: Usage): Cost {
   const rate = (RATES as Record<string, Rate | undefined>)[model] ?? TEXT_RATES[model]
@@ -58,9 +73,13 @@ export function computeCost(model: string, usage: Usage): Cost {
   const details = usage.input_tokens_details
   const textTokens = details?.text_tokens ?? usage.input_tokens
   const imageTokens = details?.image_tokens ?? 0
+  const cachedTokens = Math.min(details?.cached_tokens ?? 0, textTokens)
+  const uncachedTextTokens = textTokens - cachedTokens
 
   const inputCost =
-    (textTokens / 1_000_000) * rate.text_in + (imageTokens / 1_000_000) * rate.image_in
+    (uncachedTextTokens / 1_000_000) * rate.text_in +
+    (cachedTokens / 1_000_000) * (rate.cached_in ?? rate.text_in) +
+    (imageTokens / 1_000_000) * rate.image_in
   const outputCost = (usage.output_tokens / 1_000_000) * rate.out
 
   return { usd: inputCost + outputCost, source: 'computed' }

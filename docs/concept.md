@@ -108,7 +108,7 @@ Generation folders stay exactly as today (append-only history). Sidecar `metadat
     "assumptions": ["…"],                                 // free-text notes, mirrors the response
     "warnings": [{ "code": "…", "severity": "…", "action": "accepted|dismissed" }],
     "series_context_ids": ["…"],
-    "playbook_version": "4", "enhance_model": "gpt-5.6"
+    "playbook_version": "4", "enhance_model": "deepseek-v4.1-flash"
   },
   "moderation_outcome": { "blocked": true, "stage": "input", "categories": ["…"] } // when blocked
 }

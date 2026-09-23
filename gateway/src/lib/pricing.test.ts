@@ -63,4 +63,42 @@ describe('computeCost', () => {
     const usage: Usage = { input_tokens: 100, output_tokens: 100, total_tokens: 200 }
     expect(computeCost('not-a-real-model', usage)).toEqual({ usd: null, source: 'none' })
   })
+
+  describe('cached tokens', () => {
+    test('deepseek-v4.1-flash prices cached tokens at the cached rate, the rest at the full rate', () => {
+      const usage: Usage = {
+        input_tokens: 1000,
+        output_tokens: 500,
+        total_tokens: 1500,
+        input_tokens_details: { cached_tokens: 400 },
+      }
+      const cost = computeCost('deepseek-v4.1-flash', usage)
+      // (600 uncached / 1e6 * 0.50) + (400 cached / 1e6 * 0.05) + (500 / 1e6 * 1.50)
+      const expected = (600 / 1_000_000) * 0.5 + (400 / 1_000_000) * 0.05 + (500 / 1_000_000) * 1.5
+      expect(cost.source).toBe('computed')
+      expect(cost.usd).toBeCloseTo(expected, 10)
+    })
+
+    test('a model with no cached_in rate falls back to the full text rate for cached tokens', () => {
+      const usage: Usage = {
+        input_tokens: 1000,
+        output_tokens: 0,
+        total_tokens: 1000,
+        input_tokens_details: { cached_tokens: 500 },
+      }
+      const cost = computeCost('gpt-5.6-terra', usage)
+      expect(cost.usd).toBeCloseTo((1000 / 1_000_000) * 2.5, 10)
+    })
+
+    test('cached_tokens is clamped to input_tokens (never a negative uncached remainder)', () => {
+      const usage: Usage = {
+        input_tokens: 100,
+        output_tokens: 0,
+        total_tokens: 100,
+        input_tokens_details: { cached_tokens: 999 },
+      }
+      const cost = computeCost('deepseek-v4.1-flash', usage)
+      expect(cost.usd).toBeCloseTo((100 / 1_000_000) * 0.05, 10)
+    })
+  })
 })

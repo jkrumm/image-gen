@@ -51,8 +51,10 @@ async function postRecord(args: {
       outcome: args.outcome,
       input_tokens: args.usage.input_tokens,
       output_tokens: args.usage.output_tokens,
-      cache_read_tokens: 0,
+      cache_read_tokens: args.usage.input_tokens_details?.cached_tokens ?? 0,
       cache_write_tokens: 0,
+      // Reasoning is already folded into `completion_tokens`/`output_tokens` on
+      // this endpoint — no separate reasoning field to report.
       reasoning_tokens: 0,
       duration_ms: args.durationMs,
       cost_usd: args.cost.usd,

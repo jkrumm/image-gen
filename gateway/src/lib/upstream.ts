@@ -180,14 +180,24 @@ function validateImages(images: UpstreamImage[], format: string): void {
  * callers on the same vendor proxy (e.g. `lib/enhance.ts`'s
  * `/chat/completions` call) so retry/503-user_error handling isn't
  * duplicated.
+ *
+ * `timeoutMs` defaults to the image-endpoint guard (`REQUEST_TIMEOUT_MS`);
+ * callers on a slower upstream (e.g. `lib/enhance.ts`'s reasoning-heavy
+ * `/chat/completions` call) pass a longer one explicitly rather than this
+ * function's default changing under every caller at once.
  */
-export async function requestWithRetry(url: string, init: RequestInit): Promise<Response> {
+export async function requestWithRetry(
+  url: string,
+  init: RequestInit,
+  options: { timeoutMs?: number } = {},
+): Promise<Response> {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
   let lastErr: Error | undefined
 
   for (let i = 0; i < RETRY_ATTEMPTS; i++) {
     let res: Response
     try {
-      res = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err))
       if (i < RETRY_ATTEMPTS - 1) {

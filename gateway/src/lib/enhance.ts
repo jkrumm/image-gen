@@ -45,10 +45,15 @@ export interface ChatCompletionUsage {
   completion_tokens: number
   total_tokens: number
   completion_tokens_details?: Record<string, number>
+  // Cache-read tokens ride along as `prompt_tokens_details.cached_tokens` —
+  // measured working on this endpoint 2026-09-13 (deepseek-v4.1-flash,
+  // gpt-5.6-luna, glm-5.3-flash all report it). A subset of `prompt_tokens`,
+  // not additive.
+  prompt_tokens_details?: { cached_tokens?: number }
 }
 
 export interface ChatCompletionResponse {
-  choices: { message: { content: string | null } }[]
+  choices: { message: { content: string | null }; finish_reason?: string }[]
   usage?: ChatCompletionUsage
 }
 
@@ -303,21 +308,41 @@ function chatCompletionsUrl(): string {
   return `${base}/chat/completions`
 }
 
+const DEFAULT_MAX_COMPLETION_TOKENS = 16000
+
+/**
+ * Hang guard for the enhance model's `/chat/completions` call, not a budget
+ * (rules/agent-limits.md) — a reasoning-heavy planner call can legitimately
+ * spend minutes on `xhigh`/`max` effort. Deliberately >= 30 minutes and
+ * independent of `upstream.ts`'s 180s default, which stays tuned for the
+ * image-generation endpoints.
+ */
+const ENHANCE_REQUEST_TIMEOUT_MS = 1_800_000
+
 async function callChatCompletions(
   messages: ChatMessage[],
-  options: { responseFormat?: 'json_object' } = {},
+  options: { responseFormat?: 'json_object'; maxCompletionTokens?: number } = {},
 ): Promise<ChatCompletionResponse> {
-  const body: Record<string, unknown> = { model: env.ENHANCE_MODEL, messages }
+  const body: Record<string, unknown> = {
+    model: env.ENHANCE_MODEL,
+    messages,
+    reasoning_effort: env.ENHANCE_REASONING_EFFORT,
+    max_completion_tokens: options.maxCompletionTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
+  }
   if (options.responseFormat) body['response_format'] = { type: options.responseFormat }
 
-  const res = await requestWithRetry(chatCompletionsUrl(), {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      'content-type': 'application/json',
+  const res = await requestWithRetry(
+    chatCompletionsUrl(),
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  })
+    { timeoutMs: ENHANCE_REQUEST_TIMEOUT_MS },
+  )
   return (await res.json()) as ChatCompletionResponse
 }
 
@@ -331,14 +356,17 @@ async function callChatCompletions(
  * detected by the rejection message naming it, not a hardcoded model
  * allowlist.
  */
-export async function callPlanModel(messages: ChatMessage[]): Promise<ChatCompletionResponse> {
+export async function callPlanModel(
+  messages: ChatMessage[],
+  options: { maxCompletionTokens?: number } = {},
+): Promise<ChatCompletionResponse> {
   try {
-    return await callChatCompletions(messages, { responseFormat: 'json_object' })
+    return await callChatCompletions(messages, { responseFormat: 'json_object', ...options })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (!message.toLowerCase().includes('response_format')) throw err
     log('plan.response_format_unsupported', { error: message })
-    return callChatCompletions(messages)
+    return callChatCompletions(messages, options)
   }
 }
 
@@ -350,7 +378,47 @@ function sumUsage(
     prompt_tokens: (a?.prompt_tokens ?? 0) + (b?.prompt_tokens ?? 0),
     completion_tokens: (a?.completion_tokens ?? 0) + (b?.completion_tokens ?? 0),
     total_tokens: (a?.total_tokens ?? 0) + (b?.total_tokens ?? 0),
+    prompt_tokens_details: {
+      cached_tokens:
+        (a?.prompt_tokens_details?.cached_tokens ?? 0) +
+        (b?.prompt_tokens_details?.cached_tokens ?? 0),
+    },
   }
+}
+
+/**
+ * An under-budgeted reasoning model returns HTTP 200 with empty content and
+ * `finish_reason: length` — silently (rules/agent-limits.md). Never read that
+ * as "the model failed"; the fix is more budget, not a smaller effort.
+ */
+function isTruncatedResponse(response: ChatCompletionResponse): boolean {
+  const choice = response.choices[0]
+  const content = choice?.message.content ?? ''
+  return choice?.finish_reason === 'length' || content.trim().length === 0
+}
+
+/**
+ * Call the plan model, and if the reply comes back truncated/empty, retry
+ * once with double the completion-token budget before giving up. Raising the
+ * budget is the correct fix for `finish_reason: length` — lowering effort is
+ * not.
+ */
+async function callPlanModelWithBudgetRetry(
+  messages: ChatMessage[],
+): Promise<ChatCompletionResponse> {
+  const first = await callPlanModel(messages)
+  if (!isTruncatedResponse(first)) return first
+
+  const retryBudget = DEFAULT_MAX_COMPLETION_TOKENS * 2
+  log('plan.llm_truncated_retry', { maxCompletionTokens: retryBudget })
+  const second = await callPlanModel(messages, { maxCompletionTokens: retryBudget })
+  if (isTruncatedResponse(second)) {
+    throw new PlanUpstreamError(
+      'enhance model returned a truncated/empty response twice even after doubling max_completion_tokens',
+      sumUsage(first.usage, second.usage),
+    )
+  }
+  return second
 }
 
 /**
@@ -378,7 +446,7 @@ export interface PlanLlmResult {
  * validate. Throws `PlanUpstreamError` if the second attempt also fails.
  */
 export async function requestLlmPlan(messages: ChatMessage[]): Promise<PlanLlmResult> {
-  const first = await callPlanModel(messages)
+  const first = await callPlanModelWithBudgetRetry(messages)
   const firstContent = first.choices[0]?.message.content ?? ''
   const firstResult = parseLlmPlan(firstContent)
   if ('data' in firstResult)
@@ -393,7 +461,7 @@ export async function requestLlmPlan(messages: ChatMessage[]): Promise<PlanLlmRe
       content: `Your last response failed validation: ${firstResult.error}. Reply again with ONLY the corrected JSON object — no commentary, no code fences.`,
     },
   ]
-  const second = await callPlanModel(retryMessages)
+  const second = await callPlanModelWithBudgetRetry(retryMessages)
   const secondContent = second.choices[0]?.message.content ?? ''
   const secondResult = parseLlmPlan(secondContent)
   const usage = sumUsage(first.usage, second.usage)

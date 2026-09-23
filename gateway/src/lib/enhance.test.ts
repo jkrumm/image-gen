@@ -230,15 +230,15 @@ describe('snapToNearestPreset', () => {
 
 describe('resolveSettings (capability-matrix correction)', () => {
   /**
-   * Was: "transparent background reroutes to gpt-image-1.5". There is no
-   * fallback model left, so the enhancer must instead hand back a *runnable*
-   * plan — opaque, with the correction surfaced — rather than settings
-   * `/generate` would immediately 400.
+   * Both generatable models now have a real alpha channel (live-probed
+   * 2026-09-23), so an explicit-model transparent proposal is returned
+   * unchanged — no correction, no note. See the xhigh test below for the
+   * capability this describe block still does correct.
    */
-  test('transparent background is forced to opaque and noted, not rerouted', () => {
+  test('transparent background is passed through unchanged on a model with an alpha channel', () => {
     const { settings, notes } = resolveSettings({
       proposed: {
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         size: 'auto',
         quality: 'high',
         background: 'transparent',
@@ -249,15 +249,15 @@ describe('resolveSettings (capability-matrix correction)', () => {
       overrides: undefined,
       hasReferences: false,
     })
-    expect(settings.model).toBe('gpt-image-2')
-    expect(settings.background).toBe('opaque')
-    expect(notes.some((note) => note.includes('alpha channel'))).toBe(true)
+    expect(settings.model).toBe('gpt-image-2.5-flare')
+    expect(settings.background).toBe('transparent')
+    expect(notes.some((note) => note.includes('alpha channel'))).toBe(false)
   })
 
   test('an invalid custom size snaps to the nearest preset and notes it', () => {
     const { settings, notes } = resolveSettings({
       proposed: {
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         size: '1000x1000',
         quality: 'medium',
         background: 'opaque',
@@ -275,7 +275,7 @@ describe('resolveSettings (capability-matrix correction)', () => {
   test('user overrides are echoed verbatim, taking precedence over the LLM proposal', () => {
     const { settings } = resolveSettings({
       proposed: {
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         size: 'auto',
         quality: 'low',
         background: 'opaque',
@@ -293,7 +293,7 @@ describe('resolveSettings (capability-matrix correction)', () => {
   test('endpoint derives from has_references, not from the LLM', () => {
     const { settings } = resolveSettings({
       proposed: {
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         size: 'auto',
         quality: 'low',
         background: 'opaque',
@@ -310,7 +310,7 @@ describe('resolveSettings (capability-matrix correction)', () => {
   test('input_fidelity is dropped for a model that rejects it, with a note', () => {
     const { settings, notes } = resolveSettings({
       proposed: {
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         size: 'auto',
         quality: 'high',
         background: 'opaque',
@@ -324,6 +324,38 @@ describe('resolveSettings (capability-matrix correction)', () => {
     })
     expect(settings.input_fidelity).toBeUndefined()
     expect(notes.some((note) => note.includes('input_fidelity'))).toBe(true)
+  })
+
+  test('an auto model with a draft quality routes to flare; an edit routes to sunburst', () => {
+    const draft = resolveSettings({
+      proposed: {
+        model: 'auto',
+        size: 'auto',
+        quality: 'low',
+        background: 'opaque',
+        n: 4,
+        moderation: 'auto',
+        partial_images: 1,
+      },
+      overrides: undefined,
+      hasReferences: false,
+    })
+    expect(draft.settings.model).toBe('gpt-image-2.5-flare')
+
+    const edit = resolveSettings({
+      proposed: {
+        model: 'auto',
+        size: 'auto',
+        quality: 'low',
+        background: 'opaque',
+        n: 1,
+        moderation: 'auto',
+        partial_images: 1,
+      },
+      overrides: undefined,
+      hasReferences: true,
+    })
+    expect(edit.settings.model).toBe('gpt-image-2.5-sunburst')
   })
 })
 

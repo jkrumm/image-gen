@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { generateRequestSchema, validateSizeForModel } from '@image-gen/shared'
+import { generateRequestSchema, resolveModel, validateSizeForModel } from '@image-gen/shared'
 import {
   buildPromoteRequest,
   buildRerunRequest,
@@ -18,7 +18,7 @@ function makeEntry(overrides: Partial<GenerationMetadataInput>) {
     kind: 'generate',
     prompt: 'a lighthouse at dusk, oil painting',
     requested_model: 'auto',
-    model: 'gpt-image-2',
+    model: 'gpt-image-2.5-flare',
     routed: false,
     params: {
       size: '1024x1024',
@@ -36,8 +36,8 @@ function makeEntry(overrides: Partial<GenerationMetadataInput>) {
   } satisfies GenerationMetadataInput)
 }
 
-/** A generation recorded before the studio went gpt-image-2-only: a retired model, a transparent
- * background, and an `input_fidelity` — all three of which gpt-image-2 rejects today. */
+/** A generation recorded before the studio moved to the 2.5 models: a retired model and an
+ * `input_fidelity` — both of which no generatable model accepts today. */
 function makeLegacyEntry(overrides: Partial<GenerationMetadataInput> = {}) {
   return makeEntry({
     kind: 'edit',
@@ -58,7 +58,7 @@ describe('requestFromMetadata', () => {
     const request = requestFromMetadata(entry)
     expect(request.size).toBe('1254x1254')
     expect(request.prompt).toBe('a lighthouse at dusk, oil painting')
-    expect(request.model).toBe('gpt-image-2')
+    expect(request.model).toBe('gpt-image-2.5-flare')
   })
 
   test('reports a retired model verbatim — coercion belongs to the replay builders, not here', () => {
@@ -79,21 +79,22 @@ describe('requestFromMetadata', () => {
   })
 })
 
-describe('replaying a legacy generation onto the only generatable model', () => {
-  test('a retired model is replaced by gpt-image-2, and the change is reported', () => {
+describe('replaying a legacy generation onto a current generatable model', () => {
+  // makeLegacyEntry is kind: 'edit', so the routing rule (resolveModel) always lands on sunburst.
+  const EXPECTED_MODEL = resolveModel({ model: 'auto', endpoint: 'edit', quality: 'high' })
+
+  test('a retired model is replaced via the resolveModel routing rule, and the change is reported', () => {
     const { request, coercions } = snappedReplayRequest(makeLegacyEntry())
-    expect(request.model).toBe('gpt-image-2')
+    expect(request.model).toBe(EXPECTED_MODEL)
     expect(coercions).toContainEqual(
-      expect.objectContaining({ field: 'model', from: 'gpt-image-1.5', to: 'gpt-image-2' }),
+      expect.objectContaining({ field: 'model', from: 'gpt-image-1.5', to: EXPECTED_MODEL }),
     )
   })
 
-  test('a transparent background becomes opaque, and the change is reported', () => {
+  test('a transparent background survives replay unchanged — both generatable models have an alpha channel', () => {
     const { request, coercions } = snappedReplayRequest(makeLegacyEntry())
-    expect(request.background).toBe('opaque')
-    expect(coercions).toContainEqual(
-      expect.objectContaining({ field: 'background', from: 'transparent', to: 'opaque' }),
-    )
+    expect(request.background).toBe('transparent')
+    expect(coercions.filter((coercion) => coercion.field === 'background')).toEqual([])
   })
 
   test('input_fidelity is dropped entirely, and the change is reported', () => {
@@ -116,13 +117,13 @@ describe('replaying a legacy generation onto the only generatable model', () => 
     })
     const { request } = buildRerunRequest(legacy)
     const parsed = generateRequestSchema.parse(request)
-    expect(parsed.model).toBe('gpt-image-2')
-    expect(parsed.background).toBe('opaque')
-    expect(validateSizeForModel('gpt-image-2', parsed.size)).toBeNull()
+    expect(parsed.model).toBe(EXPECTED_MODEL)
+    expect(parsed.background).toBe('transparent')
+    expect(validateSizeForModel(EXPECTED_MODEL, parsed.size)).toBeNull()
     expect(parsed.prompt).toBe(legacy.prompt)
   })
 
-  test('a modern gpt-image-2 generation needs no coercion at all', () => {
+  test('a modern gpt-image-2.5-flare generation needs no coercion at all', () => {
     expect(snappedReplayRequest(makeEntry({})).coercions).toEqual([])
   })
 
@@ -130,18 +131,17 @@ describe('replaying a legacy generation onto the only generatable model', () => 
     const { coercions } = snappedReplayRequest(makeLegacyEntry())
     const described = describeCoercions(coercions)
     expect(described).toContain('gpt-image-1.5')
-    expect(described).toContain('transparent')
     expect(described).toContain('input_fidelity')
   })
 })
 
 describe('the replay hazard — snapping a recorded but unreplayable size', () => {
-  test('a non-16-divisible recorded size (gpt-image-2 auto output) is snapped into validity', () => {
-    // Observed live: a 1024x1024 reference produced a 1254x1254 output on gpt-image-2.
+  test('a non-16-divisible recorded size (a gpt-image auto output) is snapped into validity', () => {
+    // Observed live: a 1024x1024 reference produced a 1254x1254 output.
     const entry = makeEntry({ params: { ...makeEntry({}).params, size: '1254x1254' } })
     const { request, coercions } = buildRerunRequest(entry)
     expect(request.size).not.toBe('1254x1254')
-    expect(validateSizeForModel('gpt-image-2', request.size ?? 'auto')).toBeNull()
+    expect(validateSizeForModel('gpt-image-2.5-flare', request.size ?? 'auto')).toBeNull()
     expect(coercions).toContainEqual(expect.objectContaining({ field: 'size', from: '1254x1254' }))
   })
 
@@ -152,25 +152,27 @@ describe('the replay hazard — snapping a recorded but unreplayable size', () =
     expect(coercions.filter((coercion) => coercion.field === 'size')).toEqual([])
   })
 
-  test('a legacy preset size stays put — it is valid on gpt-image-2 too', () => {
-    // Retired models were presets-only; every preset is still a legal gpt-image-2 size, so
-    // replaying one changes the model but never the size.
+  test('a legacy preset size stays put — it is valid on every generatable model too', () => {
+    // Retired models were presets-only; every preset is still a legal size on the current
+    // generatable models, so replaying one changes the model but never the size.
     const entry = makeEntry({
       model: 'gpt-image-1.5',
+      kind: 'edit',
       params: { ...makeEntry({}).params, size: '1536x1024' },
     })
     expect(buildPromoteRequest(entry).request.size).toBe('1536x1024')
   })
 
-  test('a legacy custom size is snapped into the gpt-image-2 envelope, not folded to a preset', () => {
-    // gpt-image-2 accepts arbitrary WxH, so replay keeps the recorded shape rather than
-    // collapsing it onto a preset the way a presets-only target would have required.
+  test('a legacy custom size is snapped into the shared customSize envelope, not folded to a preset', () => {
+    // Every current generatable model accepts arbitrary WxH, so replay keeps the recorded shape
+    // rather than collapsing it onto a preset the way a presets-only target would have required.
     const entry = makeEntry({
       model: 'gpt-image-1.5',
+      kind: 'edit',
       params: { ...makeEntry({}).params, size: '1254x1254' },
     })
     const size = buildTweakRequest(entry).request.size ?? 'auto'
-    expect(validateSizeForModel('gpt-image-2', size)).toBeNull()
+    expect(validateSizeForModel('gpt-image-2.5-sunburst', size)).toBeNull()
     expect(size).toMatch(/^\d+x\d+$/)
   })
 })

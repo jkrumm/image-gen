@@ -16,7 +16,7 @@ import { consumeSseStream, handleFrame, parseJsonEnvelope, type StreamHandlers }
 const GENERATE_RESPONSE: GenerateResponse = {
   id: 'gen_123',
   created: 1_700_000_000,
-  model: 'gpt-image-2',
+  model: 'gpt-image-2.5-flare',
   requested_model: 'auto',
   routed: false,
   images: [{ b64_json: 'ZmFrZQ==', format: 'png' }],
@@ -29,9 +29,8 @@ const GENERATE_RESPONSE: GenerateResponse = {
 }
 
 /** The verified `/enhance` v2 response shape from the G4a brief (live-probed 2026-07-19), with
- * `settings.model`/`settings.background` updated for the single-model studio: `/enhance` may only
- * plan a generation on `gpt-image-2`, which has no alpha channel, so it can no longer answer with
- * a retired model or a transparent background. */
+ * `settings.model` updated for the current generatable models (`gpt-image-2.5-flare`/`sunburst`,
+ * both with a real alpha channel — `background` is no longer forced to opaque). */
 const PLAN_RESPONSE_FIXTURE = {
   intent: { detected: 'icon', confidence: 0.93 },
   prompt: 'a flat-design webhook delivery icon, strong silhouette',
@@ -40,7 +39,7 @@ const PLAN_RESPONSE_FIXTURE = {
   assumptions: ['flat design'],
   settings: {
     endpoint: 'generate',
-    model: 'gpt-image-2',
+    model: 'gpt-image-2.5-flare',
     size: '1024x1024',
     quality: 'low',
     background: 'opaque',
@@ -268,7 +267,7 @@ describe('parseJsonEnvelope', () => {
     // shape live-probed against the running gateway for this brief. A schema change on
     // either side that breaks this must fail loudly here, not silently in the UI.
     const parsed = planResponseSchema.parse(PLAN_RESPONSE_FIXTURE)
-    expect(parsed.settings.model).toBe('gpt-image-2')
+    expect(parsed.settings.model).toBe('gpt-image-2.5-flare')
     expect(parsed.estimated_cost.total_usd).toBeCloseTo(0.034944)
     expect(parsed.mode_applied).toBe('full')
   })

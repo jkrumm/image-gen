@@ -9,19 +9,27 @@ interface Rate {
 }
 
 /**
- * USD per 1M tokens (OpenAI direct pricing, mid-2026; re-verify against the vendor page before trusting a number here).
+ * USD per 1M tokens (OpenAI direct pricing; gpt-image-2.5-flare/sunburst
+ * measured live against our IU upstream 2026-09-23, the rest mid-2026 — re-verify
+ * against the vendor page before trusting an older number here).
  *
  * Keyed by `KnownImageModel`, not `ImageModel`: pricing is applied to usage
- * *records*, which are historical. Generation is single-model today, but the
- * library still holds sidecars produced on gpt-image-1.5 / gpt-image-1-mini,
- * and `computeCost` is what puts a number next to them. Dropping a retired
- * model's rate here would silently turn every one of those into
+ * *records*, which are historical. Generation runs on the 2.5 pair today, but
+ * the library still holds sidecars produced on gpt-image-2 / -1.5 /
+ * -1-mini, and `computeCost` is what puts a number next to them. Dropping a
+ * retired model's rate here would silently turn every one of those into
  * `{ usd: null, source: 'none' }`. Never shrink this map.
  */
 const RATES: Record<KnownImageModel, Rate> = {
   'gpt-image-2': { text_in: 5.0, image_in: 8.0, out: 30.0 },
   'gpt-image-1.5': { text_in: 5.0, image_in: 8.0, out: 32.0 },
   'gpt-image-1-mini': { text_in: 2.0, image_in: 2.5, out: 8.0 },
+  // Identical pricing for flare and sunburst (probe-verified 2026-09-23) — the
+  // two models trade latency, not token price. No cached image-input rate:
+  // the image endpoints don't report cached tokens today, so text/image/out
+  // is the whole shape.
+  'gpt-image-2.5-flare': { text_in: 5.0, image_in: 8.0, out: 30.0 },
+  'gpt-image-2.5-sunburst': { text_in: 5.0, image_in: 8.0, out: 30.0 },
 }
 
 /**

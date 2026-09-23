@@ -10,7 +10,7 @@ Cross-cutting prompting doctrine that applies regardless of the detected intent.
 4. **Describe the job, not just the picture.** State the intended use early ("hero banner for a blog", "app icon", "UI mock", "infographic") — it sets the model's mode and polish level.
 5. **Medium/type first.** Open with the image type: photo, oil painting, watercolor, illustration, vector, 3D render.
 6. **Canonical ordering:** medium/type → scene/background → subject (lead with the concrete noun) → key details (composition/camera, lighting, palette/mood, style anchor) → exact text + typography → constraint block → the size/aspect intent.
-7. **Iterate like a director, not a gambler.** Base composition first, then lighting, then detail/clutter passes. Draft at `quality: low` (~$0.006), finalize at `high` (~$0.211, 35.8×) only when the composition is right.
+7. **Iterate like a director, not a gambler.** Base composition first, then lighting, then detail/clutter passes. Draft at `quality: low` (~$0.006), finalize at `high` (~$0.053, ~9×) only when the composition is right; reserve `xhigh`/`max` (~$0.094/~$0.211) for an explicit "print / maximum detail" request.
 
 ## Photorealism
 
@@ -32,7 +32,7 @@ Cross-cutting prompting doctrine that applies regardless of the detected intent.
 
 ## Text in images
 
-- gpt-image-2 renders Latin text at ~95–99% accuracy; older models are unreliable.
+- gpt-image-2.5 (flare/sunburst) renders Latin text at ~95–99% accuracy; older models are unreliable.
 - Quote literal text: `Headline: "SUMMER COLLECTION"`. Unquoted text is treated as a suggestion.
 - Specify typography: font feel, weight, color, placement. Spell tricky words letter-by-letter. List each language explicitly for multilingual text.
 - If spelling fails: less text, larger type, regenerate. Text-heavy → `quality: high` (worth the cost — see `settings.md`).
@@ -49,7 +49,7 @@ Cross-cutting prompting doctrine that applies regardless of the detected intent.
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Mangled hands/anatomy                             | "anatomically correct hands, natural hand position"; avoid extreme poses; hide hands compositionally |
 | AI look (plastic skin, warm tint, oversaturation) | Photorealism counters above; quality high for portraits                                              |
-| Text gibberish                                    | See "Text in images" above; gpt-image-2 only for text-heavy work                                     |
+| Text gibberish                                    | See "Text in images" above; use `quality: high` or above for text-heavy work                         |
 | Wrong object counts                               | Keep counts ≤5; don't rely on numbering                                                              |
 | Iterative drift / overcooking                     | Branch from the base image; preserve lists; "subtle refinements only"                                |
 | Strict isometric drift                            | Treat as style cue, not projection; post-cleanup for precision (see `technical.md`)                  |

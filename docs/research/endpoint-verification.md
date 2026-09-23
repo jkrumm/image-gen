@@ -116,3 +116,37 @@ Drives the UX defaults — don't re-litigate these from intuition. **These ancho
 Streaming overhead is flat per request, not per partial: asking for 3 partials delivered **1** (upstream skips them when generation is fast). Never build UI that waits for a fixed partial count.
 
 **Measured cross-model comparison** (same prompt, `low`, `n=4`, 1024×1024): gpt-image-2 opaque = **$0.02625**; gpt-image-1.5 transparent = **$0.057764**. gpt-image-2 is ~2.2× cheaper for the equivalent job — a real factor in the opaque-vs-transparent routing decision, not just a token-count curiosity.
+
+## Round 5 — gpt-image-2.5-flare / gpt-image-2.5-sunburst migration (2026-09-23)
+
+Live-probed against our IU upstream the day the generate path moved off `gpt-image-2`. `gpt-image-2` itself was also re-measured (its `medium` anchor). Both new models use the **undated alias ids** (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`), not the `-2026-09-08` dated snapshots.
+
+| Fact | `gpt-image-2.5-flare` | `gpt-image-2.5-sunburst` |
+|-|-|-|
+| Positioning (OpenAI docs) | speed-optimized "fast high-quality everyday" model, up to ~50% lower latency than gpt-image-2 | quality-optimized, best for editing precision / reference preservation, slower |
+| Measured latency @ 1024² | low 7–20s, high 20s | low 9–13s, high 32s |
+| Pricing (USD/1M) | text_in 5.0, cached text_in 1.25, image_in 8.0, cached image_in 2.0, out 30.0 | identical |
+| Output tokens @ 1024×1024 | low 196, medium 439, high 1756, xhigh 3122, max 7024 (all measured) | same at low/medium/high (measured); xhigh/max assumed to match given token-identical pricing |
+| Quality values | `low\|medium\|high\|xhigh\|max\|auto` all accepted 200 — the upstream's own error text for an invalid value lists only low/medium/high/auto; that error text is **stale**, xhigh/max work | same |
+| `background: "transparent"` + png | 200, real RGBA (colortype 6), ~35–43% alpha=0, clean cutout; subject alpha ~252–253, not a full 255 | same |
+| `input_fidelity` | hard 400 `"Unknown parameter: 'input_fidelity'"` | same |
+| Custom sizes | 1536×640 and 3072×1024 accepted (same envelope as gpt-image-2) | same |
+| `output_format: webp` + `output_compression` | accepted | accepted |
+| `n=2` | accepted | accepted |
+| `moderation: low` | accepted | accepted |
+| Streaming generations (`partial_images: 2`) | 200, but emits **only** `image_generation.completed` — zero partials, zero streaming-overhead tokens | emits `image_generation.partial_image` ×2 then `completed`; +153 output tokens for 2 partials (≈77/partial) |
+| Streaming edits | `image_edit.completed` only | `image_edit.partial_image` + `image_edit.completed` |
+| Edits (`/images/edits`, 1 ref image) | 200; input = 1024 image tokens + text | 200, same |
+| Response shape | adds a per-image `data[].generation_id` field (harmless — ignored or tolerated) | same |
+| Error shape (invalid params) | HTTP 503, body `[OpenAI Vendor Group Key StatusCode: BadRequest] {"error":{"type":"invalid_request_error",...}}` — **no** `user_error` substring anywhere | same |
+
+Also measured: **`gpt-image-2` at `quality: medium` @ 1024² = 1756 output tokens** — `shared/src/cost.ts` previously interpolated this as the geometric mean of low/high (1173); the measured value replaces it.
+
+**Consequences**, all landed the same day:
+
+- `IMAGE_MODELS` (generate path) = `['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']`; `gpt-image-2` joins `gpt-image-1.5`/`-1-mini` as read-path-only in `KNOWN_IMAGE_MODELS`.
+- `MODEL_CAPABILITIES` gains `extendedQuality` (true for both 2.5 models, false for every legacy model) — validated by `validateQualityForModel` alongside the existing background/size/fidelity checks.
+- `resolveModel`/`routingReason` (`shared/src/rules.ts`) route `model: 'auto'` by endpoint + quality: an edit → sunburst; a generate at `high`/`xhigh`/`max` → sunburst; a generate at `low`/`medium`/`auto` → flare.
+- `validateBackgroundForModel()` now **passes** for both generatable models; a new `validateTransparentOutputFormat()` rejects `transparent` + `jpeg` (no alpha channel there) instead.
+- `gateway/src/lib/upstream.ts`'s non-retry check (`isWrappedUserErrorBody`) recognizes both 503-wrapping shapes — the historical `user_error`-substring one and this round's `StatusCode: BadRequest` / `invalid_request_error` one, which contains no `user_error` substring at all and would otherwise burn 3 retries before failing.
+- `gpt-6-luna` text pricing (OpenAI's official pricing page, short-context tier — not a live probe against our own endpoint) was added to `gateway/src/lib/pricing.ts`'s `TEXT_RATES` alongside the still-measured `gpt-5.6-luna` row.

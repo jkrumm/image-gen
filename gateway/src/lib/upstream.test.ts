@@ -6,7 +6,13 @@ process.env['API_SECRET'] ??= 'test-secret'
 process.env['OPENAI_BASE_URL'] ??= 'http://localhost:1'
 process.env['OPENAI_API_KEY'] ??= 'test-key'
 
-const { magicBytesValid, parseWrappedUserError, UpstreamUserError } = await import('./upstream.js')
+const {
+  isWrappedUserErrorBody,
+  magicBytesValid,
+  parseWrappedUserError,
+  requestWithRetry,
+  UpstreamUserError,
+} = await import('./upstream.js')
 
 describe('magicBytesValid', () => {
   test('accepts a valid PNG header', () => {
@@ -117,5 +123,58 @@ describe('parseWrappedUserError', () => {
   test('falls back gracefully on unparseable embedded JSON', () => {
     const err = parseWrappedUserError('[prefix] {not valid json')
     expect(err.moderationDetails).toBeUndefined()
+  })
+})
+
+describe('isWrappedUserErrorBody', () => {
+  test('recognizes the historical user_error substring shape', () => {
+    expect(
+      isWrappedUserErrorBody(
+        '[OpenAI Vendor Group Key StatusCode: BadRequest] {"error":{"type":"image_generation_user_error"}}',
+      ),
+    ).toBe(true)
+  })
+
+  // gpt-image-2.5-flare/sunburst-era shape (docs/research/endpoint-verification.md
+  // 2026-09-23): a 400-class validation error wrapped in a 503 with NO
+  // "user_error" substring anywhere in the body — must still be recognized as
+  // non-retryable, or the gateway burns three retries and ~3.5s reporting the
+  // same permanent failure.
+  test('recognizes the gpt-image-2.5 BadRequest/invalid_request_error shape with no user_error substring', () => {
+    const body =
+      '[OpenAI Vendor Group Key StatusCode: BadRequest] ' +
+      JSON.stringify({ error: { type: 'invalid_request_error', message: 'bad quality value' } })
+    expect(body).not.toContain('user_error')
+    expect(isWrappedUserErrorBody(body)).toBe(true)
+  })
+
+  test('a genuine transient 503 with neither marker is not a wrapped user error', () => {
+    expect(isWrappedUserErrorBody('Service Unavailable')).toBe(false)
+  })
+})
+
+describe('requestWithRetry — non-retryable BadRequest shape', () => {
+  test('a gpt-image-2.5-era 503 BadRequest body throws UpstreamUserError without retrying', async () => {
+    const original = global.fetch
+    let calls = 0
+    global.fetch = (async () => {
+      calls++
+      return new Response(
+        '[OpenAI Vendor Group Key StatusCode: BadRequest] ' +
+          JSON.stringify({
+            error: { type: 'invalid_request_error', message: 'bad quality value' },
+          }),
+        { status: 503 },
+      )
+    }) as unknown as typeof fetch
+
+    try {
+      await expect(
+        requestWithRetry('http://localhost/generate', { method: 'POST' }),
+      ).rejects.toBeInstanceOf(UpstreamUserError)
+      expect(calls).toBe(1)
+    } finally {
+      global.fetch = original
+    }
   })
 })

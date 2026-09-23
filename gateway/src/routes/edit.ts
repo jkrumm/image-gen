@@ -12,7 +12,9 @@ import {
   routeModel,
   validateBackground,
   validateInputFidelity,
+  validateQuality,
   validateSize,
+  validateTransparentFormat,
 } from '../lib/routing.js'
 import {
   editImages,
@@ -118,18 +120,37 @@ export const editRoutes = new Elysia().post(
     }
     const fields = fieldsResult.data
 
-    const { model, routed, reason } = routeModel({ model: fields.model })
+    const { model, routed, reason } = routeModel({
+      model: fields.model,
+      endpoint: 'edit',
+      quality: fields.quality,
+    })
 
     const sizeError = validateSize(model, fields.size)
     if (sizeError) {
       return status(400, { error: { message: sizeError, type: 'invalid_request_error' } })
     }
 
-    // See generate.ts: `transparent` is a schema-valid value with no
-    // generatable model behind it, so it is a business-rule 400, not a 422.
+    // See generate.ts: `transparent` is a schema-valid value that a legacy
+    // model may reject, so it is a business-rule 400, not a 422.
     const backgroundError = validateBackground(model, fields.background)
     if (backgroundError) {
       return status(400, { error: { message: backgroundError, type: 'invalid_request_error' } })
+    }
+
+    const transparentFormatError = validateTransparentFormat(
+      fields.background,
+      fields.output_format,
+    )
+    if (transparentFormatError) {
+      return status(400, {
+        error: { message: transparentFormatError, type: 'invalid_request_error' },
+      })
+    }
+
+    const qualityError = validateQuality(model, fields.quality)
+    if (qualityError) {
+      return status(400, { error: { message: qualityError, type: 'invalid_request_error' } })
     }
 
     const fidelityError = validateInputFidelity(model, fields.input_fidelity)

@@ -44,6 +44,22 @@ export class UpstreamUserError extends Error {
 }
 
 /**
+ * True for either shape the vendor proxy uses to wrap a 400-class validation
+ * error inside a 503: the historical `user_error` substring (e.g.
+ * `image_generation_user_error`, `moderation_blocked`), and the
+ * `gpt-image-2.5-flare/sunburst`-era shape probed 2026-09-23 — a body
+ * prefixed `[OpenAI Vendor Group Key StatusCode: BadRequest]` whose embedded
+ * JSON carries `"type":"invalid_request_error"` with NO `user_error`
+ * substring at all. Both must never be retried — retrying a request that will
+ * always fail the same way just burns three attempts and ~3.5s before
+ * reporting the same error anyway.
+ */
+export function isWrappedUserErrorBody(text: string): boolean {
+  if (text.includes('user_error')) return true
+  return text.includes('StatusCode: BadRequest') && text.includes('"invalid_request_error"')
+}
+
+/**
  * Extract the JSON object embedded in the vendor proxy's 503-wrapped
  * 400-class error body. The body is a STRING with a
  * `[OpenAI Vendor Group Key StatusCode: BadRequest] ` prefix before the JSON
@@ -171,11 +187,14 @@ function validateImages(images: UpstreamImage[], format: string): void {
  * POST to an upstream image endpoint with retry. Retries on 429/5xx and
  * network errors (3 attempts, backoff 0.5s * 3^i); a 410 (deprecated model)
  * fails fast with no retry. The upstream vendor proxy wraps some 400-class
- * validation failures in a 503 (e.g. "Transparent background is not
- * supported", `moderation_blocked`) with `"type": "..._user_error"` in the
- * body — those are never retried either, and throw `UpstreamUserError`
- * (carrying `code`/`moderationDetails` when present) instead of a plain
- * `Error`. Returns the raw (ok) `Response` un-consumed so callers can either
+ * validation failures in a 503 — either the historical shape (e.g.
+ * "Transparent background is not supported", `moderation_blocked`, with
+ * `"type": "..._user_error"` in the body) or the `gpt-image-2.5` shape (a
+ * `StatusCode: BadRequest`-prefixed body with `"type":"invalid_request_error"`
+ * and no `user_error` substring at all) — see `isWrappedUserErrorBody`. Both
+ * are never retried, and throw `UpstreamUserError` (carrying
+ * `code`/`moderationDetails` when present) instead of a plain `Error`.
+ * Returns the raw (ok) `Response` un-consumed so callers can either
  * `.json()` it or stream its body. Exported for reuse by other upstream
  * callers on the same vendor proxy (e.g. `lib/enhance.ts`'s
  * `/chat/completions` call) so retry/503-user_error handling isn't
@@ -215,7 +234,7 @@ export async function requestWithRetry(
         `Model deprecated (410). Use a current model (gpt-image-{1,1-mini,1.5,2}). Detail: ${text.slice(0, 200)}`,
       )
     }
-    const isWrappedUserError = text.includes('user_error')
+    const isWrappedUserError = isWrappedUserErrorBody(text)
     if (RETRYABLE_STATUS.has(res.status) && !isWrappedUserError && i < RETRY_ATTEMPTS - 1) {
       lastErr = new Error(`Upstream ${res.status}: ${text.slice(0, 200)}`)
       await Bun.sleep(500 * 3 ** i)

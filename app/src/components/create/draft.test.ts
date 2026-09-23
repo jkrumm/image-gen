@@ -44,7 +44,7 @@ describe('parseCreateDraft', () => {
   })
 })
 
-describe('a draft persisted before the studio went gpt-image-2-only', () => {
+describe('a draft persisted before the studio moved to gpt-image-2.5-flare/sunburst', () => {
   // A real draft naming a now-retired model exists on disk. The schema deliberately still
   // ACCEPTS it: narrowing the enum would fail safeParse and silently discard the user's
   // half-finished brief along with the dead setting.
@@ -55,20 +55,30 @@ describe('a draft persisted before the studio went gpt-image-2-only', () => {
     expect(parsed?.draft.prompt).toBe('a lighthouse at dusk, oil painting')
   })
 
-  test('the retired model is coerced onto gpt-image-2 and reported, not silently swapped', () => {
+  test('the retired model is coerced onto the default generatable model and reported, not silently swapped', () => {
     const parsed = parseCreateDraft(makeDraft({ model: 'gpt-image-1.5' }))
-    expect(parsed?.draft.model).toBe('gpt-image-2')
+    expect(parsed?.draft.model).toBe('gpt-image-2.5-flare')
     expect(parsed?.notices).toContainEqual(
-      expect.objectContaining({ field: 'model', from: 'gpt-image-1.5', to: 'gpt-image-2' }),
+      expect.objectContaining({
+        field: 'model',
+        from: 'gpt-image-1.5',
+        to: 'gpt-image-2.5-flare',
+      }),
     )
   })
 
-  test('a transparent background is coerced to opaque and reported', () => {
+  test('a stored quality of xhigh/max round-trips unchanged — both generatable models support it', () => {
+    for (const quality of ['xhigh', 'max']) {
+      const parsed = parseCreateDraft(makeDraft({ quality }))
+      expect(parsed?.draft.quality).toBe(quality)
+      expect(parsed?.notices).toEqual([])
+    }
+  })
+
+  test('a transparent background round-trips unchanged — both generatable models have an alpha channel', () => {
     const parsed = parseCreateDraft(makeDraft({ background: 'transparent' }))
-    expect(parsed?.draft.background).toBe('opaque')
-    expect(parsed?.notices).toContainEqual(
-      expect.objectContaining({ field: 'background', from: 'transparent', to: 'opaque' }),
-    )
+    expect(parsed?.draft.background).toBe('transparent')
+    expect(parsed?.notices).toEqual([])
   })
 
   test('a stored input fidelity is reported as dropped', () => {
@@ -78,18 +88,16 @@ describe('a draft persisted before the studio went gpt-image-2-only', () => {
     )
   })
 
-  test('all three coercions are collected together and rendered into one line', () => {
+  test('a retired model plus a dropped input fidelity are collected together and rendered into one line', () => {
     const parsed = parseCreateDraft(
       makeDraft({
         model: 'gpt-image-1-mini',
-        background: 'transparent',
         inputFidelityChoice: 'high',
       }),
     )
-    expect(parsed?.notices).toHaveLength(3)
+    expect(parsed?.notices).toHaveLength(2)
     const described = describeDraftNotices(parsed?.notices ?? [])
     expect(described).toContain('gpt-image-1-mini')
-    expect(described).toContain('transparent')
     expect(described).toContain('input fidelity')
   })
 
@@ -101,7 +109,7 @@ describe('a draft persisted before the studio went gpt-image-2-only', () => {
       ...parsed?.draft,
       inputFidelityChoice: 'default',
     } satisfies CreateDraft)
-    expect(rewritten.model).toBe('gpt-image-2')
-    expect(rewritten.background).toBe('opaque')
+    expect(rewritten.model).toBe('gpt-image-2.5-flare')
+    expect(rewritten.background).toBe('transparent')
   })
 })

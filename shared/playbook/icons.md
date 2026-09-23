@@ -4,4 +4,4 @@
 - Always include _"original, non-infringing"_. Describe brand personality before visual elements ("warm, simple, timeless").
 - Demand small-size legibility: _"reads clearly at small and large sizes — avoid fine detail or busy backgrounds"_.
 - Square 1024×1024; _"no text unless specified"_.
-- **Transparency is not currently available** — no model in the generate path can emit alpha. Render icons on a _plain solid white background_ (say so explicitly in the prompt, never "transparent" or "cutout"), and note in `assumptions` that the background may need removing manually. See `settings.md` → "Background treatment".
+- **Transparency is available** — both generatable models have a real alpha channel. Derive `background: "transparent"` with `output_format: "png"` (or `"webp"` — jpeg has no alpha and is rejected), and describe an isolated subject with no background scenery in the prompt. See `settings.md` → "Background treatment".

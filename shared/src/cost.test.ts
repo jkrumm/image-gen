@@ -160,6 +160,76 @@ describe('estimateCost', () => {
     })
     expect(gptImage15.per_image_usd).toBeGreaterThan(gptImage2.per_image_usd)
   })
+
+  test('gpt-image-2 medium now uses the measured 1756-token anchor, not the old interpolated 1173', () => {
+    const medium = estimateCost({
+      model: 'gpt-image-2',
+      quality: 'medium',
+      size: '1024x1024',
+      streaming: false,
+      n: 1,
+    })
+    // 1756 output tokens * $30.00 / 1M
+    expect(medium.per_image_usd).toBeCloseTo(0.05268, 5)
+  })
+
+  describe('gpt-image-2.5-flare / gpt-image-2.5-sunburst', () => {
+    for (const model of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'] as const) {
+      test(`${model} quality ladder matches the measured anchors at 1024x1024`, () => {
+        const anchors = {
+          low: 0.00588,
+          medium: 0.01317,
+          high: 0.05268,
+          xhigh: 0.09366,
+          max: 0.21072,
+        }
+        for (const [quality, expected] of Object.entries(anchors)) {
+          const cost = estimateCost({
+            model,
+            quality: quality as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+            size: '1024x1024',
+            streaming: false,
+            n: 1,
+          })
+          expect(cost.per_image_usd).toBeCloseTo(expected, 4)
+        }
+      })
+    }
+
+    test('flare pays no streaming overhead (it emits zero partials); sunburst pays the flat ~77-token overhead', () => {
+      const flareBase = estimateCost({
+        model: 'gpt-image-2.5-flare',
+        quality: 'low',
+        size: '1024x1024',
+        streaming: false,
+        n: 1,
+      })
+      const flareStreaming = estimateCost({
+        model: 'gpt-image-2.5-flare',
+        quality: 'low',
+        size: '1024x1024',
+        streaming: true,
+        n: 1,
+      })
+      expect(flareStreaming.per_image_usd).toBeCloseTo(flareBase.per_image_usd, 10)
+
+      const sunburstBase = estimateCost({
+        model: 'gpt-image-2.5-sunburst',
+        quality: 'low',
+        size: '1024x1024',
+        streaming: false,
+        n: 1,
+      })
+      const sunburstStreaming = estimateCost({
+        model: 'gpt-image-2.5-sunburst',
+        quality: 'low',
+        size: '1024x1024',
+        streaming: true,
+        n: 1,
+      })
+      expect(sunburstStreaming.per_image_usd - sunburstBase.per_image_usd).toBeCloseTo(0.00231, 5)
+    })
+  })
 })
 
 describe('sizeToPixels', () => {

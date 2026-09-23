@@ -121,13 +121,44 @@ describe('POST /generate', () => {
     ))
 
   /**
-   * `background: "transparent"` is still a schema-valid value — historical
-   * sidecars carry it — so this is a hand-rolled business-rule 400, not the
-   * 422 Elysia would emit for a schema violation. It must never be silently
-   * downgraded to opaque, and must never reach upstream (which answers with a
-   * 400 wrapped in a 503, surfacing here as an opaque 502).
+   * `background: "transparent"` is accepted on both generatable models
+   * (real alpha channel, live-probed 2026-09-23) — it reaches upstream rather
+   * than being refused.
    */
-  test('a transparent-background request is refused with a 400 naming the missing alpha channel', async () => {
+  test('a transparent-background request with png output reaches upstream and succeeds', async () => {
+    let upstreamCalled = false
+    await withMockedFetch(
+      async () => {
+        upstreamCalled = true
+        return new Response(
+          JSON.stringify({
+            created: 1700000000,
+            data: [{ b64_json: PNG_B64 }],
+            usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      },
+      async () => {
+        const res = await generateRoutes.handle(
+          new Request('http://localhost/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt: 'a sticker of a cat', background: 'transparent' }),
+          }),
+        )
+        expect(res.status).toBe(200)
+        expect(upstreamCalled).toBe(true)
+      },
+    )
+  })
+
+  /**
+   * `background: "transparent"` needs an alpha channel in the output format —
+   * jpeg has none, so this business-rule 400 fires before upstream is ever
+   * called, rather than downgrading transparency or letting upstream 400.
+   */
+  test('a transparent-background + jpeg request is refused with a 400 naming the missing alpha channel', async () => {
     let upstreamCalled = false
     await withMockedFetch(
       async () => {
@@ -139,18 +170,44 @@ describe('POST /generate', () => {
           new Request('http://localhost/generate', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ prompt: 'a sticker of a cat', background: 'transparent' }),
+            body: JSON.stringify({
+              prompt: 'a sticker of a cat',
+              background: 'transparent',
+              output_format: 'jpeg',
+            }),
           }),
         )
         expect(res.status).toBe(400)
         const body = (await res.json()) as { error: { message: string; type: string } }
         expect(body.error.type).toBe('invalid_request_error')
-        expect(body.error.message).toMatch(/gpt-image-2/)
         expect(body.error.message).toMatch(/alpha channel/)
         expect(upstreamCalled).toBe(false)
       },
     )
   })
+
+  test('an xhigh/max quality request is accepted (extended quality tiers)', async () =>
+    withMockedFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            created: 1700000000,
+            data: [{ b64_json: PNG_B64 }],
+            usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      async () => {
+        const res = await generateRoutes.handle(
+          new Request('http://localhost/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt: 'a sticker of a cat', quality: 'max' }),
+          }),
+        )
+        expect(res.status).toBe(200)
+      },
+    ))
 
   test('an opaque background is accepted (the 400 is specific to transparency)', async () =>
     withMockedFetch(
@@ -172,6 +229,76 @@ describe('POST /generate', () => {
           }),
         )
         expect(res.status).toBe(200)
+      },
+    ))
+
+  /**
+   * Deploy-compat shim: the app build installed before 2026-09-23 sends `model: "gpt-image-2"`
+   * explicitly (its era's `DEFAULT_MODEL`). Without `LEGACY_REQUEST_MODELS`, this 422s until the
+   * app is rebuilt. It must still validate, still reach upstream, and route exactly like `auto`.
+   */
+  test('a legacy model: "gpt-image-2" request is accepted (200) and routed to flare at quality low', async () => {
+    let sentModel: unknown
+    await withMockedFetch(
+      async (_url, init) => {
+        sentModel = (JSON.parse(String(init?.body)) as { model: unknown }).model
+        return new Response(
+          JSON.stringify({
+            created: 1700000000,
+            data: [{ b64_json: PNG_B64 }],
+            usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      },
+      async () => {
+        const res = await generateRoutes.handle(
+          new Request('http://localhost/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              prompt: 'a sticker of a cat',
+              model: 'gpt-image-2',
+              quality: 'low',
+            }),
+          }),
+        )
+        expect(res.status).toBe(200)
+        const parsed = generateResponseSchema.parse(await res.json())
+        expect(parsed.model).toBe('gpt-image-2.5-flare')
+        expect(parsed.requested_model).toBe('gpt-image-2')
+        expect(parsed.routed).toBe(true)
+        expect(parsed.routing_reason).toContain('gpt-image-2 is retired')
+        expect(sentModel).toBe('gpt-image-2.5-flare')
+      },
+    )
+  })
+
+  test('a legacy model: "gpt-image-2" request at quality high routes to sunburst', async () =>
+    withMockedFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            created: 1700000000,
+            data: [{ b64_json: PNG_B64 }],
+            usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      async () => {
+        const res = await generateRoutes.handle(
+          new Request('http://localhost/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              prompt: 'a sticker of a cat',
+              model: 'gpt-image-2',
+              quality: 'high',
+            }),
+          }),
+        )
+        const parsed = generateResponseSchema.parse(await res.json())
+        expect(parsed.model).toBe('gpt-image-2.5-sunburst')
       },
     ))
 })

@@ -2,12 +2,16 @@ import {
   DEFAULT_MODEL,
   EDIT_LIMITS,
   estimateCost,
+  IMAGE_MODELS,
+  MODEL_CAPABILITIES,
   resolveModel,
   SIZE_PRESETS,
   snapSizeForModel,
   validateSizeForModel,
+  validateTransparentOutputFormat,
   type GenerateRequest,
   type GenerationParent,
+  type ImageModel,
   type Intent,
   type PlanOverrides,
   type PlanRequestInput,
@@ -56,12 +60,13 @@ import {
 import { plan } from '../lib/gateway'
 import type { LibraryEntry, SaveEditRequest, SaveGenerationRequest } from '../lib/library'
 import { PRESETS } from '../lib/presets'
-import { detectTransparencyClaim } from '../lib/prompt-guard'
+import { transparencyClaimMismatchesBackground } from '../lib/prompt-guard'
 import { shouldStreamJob, useQueue } from '../lib/queue'
 import { isSettingsConfigured, type Settings } from '../lib/settings'
 import { studioStore } from '../lib/studio-store'
 
-const QUALITY_OPTIONS = ['auto', 'low', 'medium', 'high']
+const QUALITY_OPTIONS = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
+const BACKGROUND_OPTIONS = ['auto', 'opaque', 'transparent']
 const FORMAT_OPTIONS = ['png', 'webp', 'jpeg']
 const MODERATION_OPTIONS = ['auto', 'low']
 const PRESET_OPTIONS = PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))
@@ -72,6 +77,23 @@ function formatBytes(bytes: number): string {
 
 function isSizePresetValue(size: string): boolean {
   return (SIZE_PRESETS as readonly string[]).includes(size)
+}
+
+/**
+ * The `model` value the Create surface's own state ever holds. Deliberately narrower than
+ * `GenerateRequest['model']` — the wire request schema also accepts `LEGACY_REQUEST_MODELS` (a
+ * deploy-compat shim for a pre-2026-09-23 app build, `shared/src/contract.ts`), but the CURRENT
+ * app must never construct or hold one of those ids itself. A value read off a seed (which is
+ * typed against the wider wire shape) is narrowed through `toModelChoice` before it ever reaches
+ * this state, rather than the state's type widening to match the wire.
+ */
+type ModelChoice = ImageModel | 'auto'
+
+function toModelChoice(value: string | undefined): ModelChoice {
+  if (value !== undefined && (IMAGE_MODELS as readonly string[]).includes(value)) {
+    return value as ImageModel
+  }
+  return 'auto'
 }
 
 type CreateProps = {
@@ -111,10 +133,11 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
   const [acceptedWarnings, setAcceptedWarnings] = useState<Set<number>>(new Set())
 
   // --- Derived settings (pre-filled by Plan, always overridable) ----------------------------
-  const [model, setModel] = useState<GenerateRequest['model']>(DEFAULT_MODEL)
+  const [model, setModel] = useState<ModelChoice>(DEFAULT_MODEL)
   const [sizeChoice, setSizeChoice] = useState('auto')
   const [customSize, setCustomSize] = useState('')
   const [quality, setQuality] = useState<GenerateRequest['quality']>('auto')
+  const [background, setBackground] = useState<GenerateRequest['background']>('auto')
   const [outputFormat, setOutputFormat] = useState<GenerateRequest['output_format']>('png')
   const [outputCompression, setOutputCompression] = useState<number | undefined>(undefined)
   const [moderation, setModeration] = useState<GenerateRequest['moderation']>('auto')
@@ -140,6 +163,10 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
   function setQualityPinned(value: GenerateRequest['quality']): void {
     setQuality(value)
     pinField('quality')
+  }
+  function setBackgroundPinned(value: GenerateRequest['background']): void {
+    setBackground(value)
+    pinField('background')
   }
   function setNPinned(value: number): void {
     setN(value)
@@ -233,9 +260,19 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
   useEffect(() => {
     if (!createSeed) return
     const req = createSeed.request
-    const seedModel = req.model ?? 'auto'
+    // `req.model` is wire-typed (`GenerateRequestInput['model']`, which also accepts
+    // `LEGACY_REQUEST_MODELS`) — narrowed here so the app's own state never holds a legacy id.
+    // In practice every seed's model already went through `replay.ts`'s coercion to a real
+    // `ImageModel` before it got here; this is the defensive backstop, not the primary guard.
+    const seedModel = toModelChoice(req.model)
     const seedBackground = req.background ?? 'auto'
-    const seedResolved = resolveModel({ model: seedModel })
+    const seedQuality = req.quality ?? 'auto'
+    const seedEndpoint = (createSeed.references?.length ?? 0) > 0 ? 'edit' : 'generate'
+    const seedResolved = resolveModel({
+      model: seedModel,
+      endpoint: seedEndpoint,
+      quality: seedQuality,
+    })
     // Seeded sizes may be truthful-but-unreplayable (e.g. a recorded 1254x1254) — snap through
     // the shared chokepoint before it ever reaches a control or a request. `replay.ts`'s builders
     // already snap too (defense in depth); re-snapping an already-valid size is a no-op.
@@ -243,15 +280,18 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
 
     // `replay.ts` already coerced a legacy seed and Library surfaced it; this is the belt-and-
     // braces pass for seeds built elsewhere, so a control can never hold an unrepresentable value.
-    if (seedBackground === 'transparent') {
+    const backgroundUnsupported =
+      seedBackground === 'transparent' && !MODEL_CAPABILITIES[seedResolved].transparentBackground
+    if (backgroundUnsupported) {
       setCoercionNotice(
-        `This generation requested a transparent background. ${DEFAULT_MODEL} has no alpha channel, so it was changed to opaque.`,
+        `This generation requested a transparent background. ${seedResolved} has no alpha channel, so it was changed to opaque.`,
       )
     }
 
     setModel(seedModel)
     applySizeString(snappedSize)
-    setQuality(req.quality ?? 'auto')
+    setQuality(seedQuality)
+    setBackground(backgroundUnsupported ? 'opaque' : seedBackground)
     setOutputFormat(req.output_format ?? 'png')
     setOutputCompression(req.output_compression)
     setModeration(req.moderation ?? 'auto')
@@ -315,6 +355,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
     setSizeChoice(draft.sizeChoice)
     setCustomSize(draft.customSize)
     setQuality(draft.quality)
+    setBackground(draft.background)
     setOutputFormat(draft.outputFormat)
     setOutputCompression(draft.outputCompression)
     setN(draft.n)
@@ -340,15 +381,13 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
         sizeChoice,
         customSize,
         quality,
-        // gpt-image-2 has no alpha channel; `auto` and `opaque` are the same request on it, so
-        // the Background control offered no real choice and was removed. Always send 'opaque'.
-        background: 'opaque',
+        background,
         outputFormat,
         outputCompression,
         n,
         moderation,
-        // Retained in the persisted shape for backward compatibility; gpt-image-2 rejects
-        // input_fidelity, so the control is gone and this is always written as 'default'.
+        // Retained in the persisted shape for backward compatibility; no generatable model
+        // supports input_fidelity, so the control is gone and this is always written as 'default'.
         inputFidelityChoice: 'default',
         pinnedFields: [...pinnedFields],
         parent,
@@ -370,6 +409,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
     sizeChoice,
     customSize,
     quality,
+    background,
     outputFormat,
     outputCompression,
     n,
@@ -382,9 +422,12 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
   ])
 
   // --- Derived model/size state ---------------------------------------------------------------
-  // gpt-image-2 accepts arbitrary `WxH` on both the generate and edit endpoints, so custom sizes
-  // are always available — the old presets-only gate belonged to the retired models.
-  const resolvedModel = useMemo(() => resolveModel({ model }), [model])
+  // Both generatable models accept arbitrary `WxH` on both the generate and edit endpoints, so
+  // custom sizes are always available — the old presets-only gate belonged to the retired models.
+  const resolvedModel = useMemo(
+    () => resolveModel({ model, endpoint: isEdit ? 'edit' : 'generate', quality }),
+    [model, isEdit, quality],
+  )
 
   if (!isSettingsConfigured(settings.gateway)) {
     return (
@@ -407,6 +450,8 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
     sizeChoice === 'custom' ? customSize : sizeChoice === 'auto' ? derivedAutoSize : sizeChoice
   const customSizeError =
     sizeChoice === 'custom' ? validateSizeForModel(resolvedModel, customSize) : null
+  // `transparent` needs an alpha channel in the OUTPUT FORMAT, not just the model — jpeg has none.
+  const transparentFormatError = validateTransparentOutputFormat(background, outputFormat)
 
   const streaming = shouldStreamJob(n, true)
   const liveCost = estimateCost({
@@ -420,18 +465,23 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
   const briefLabel = deltaMode ? 'What changes?' : 'Brief'
   const briefValue = deltaMode ? delta : brief
   const planDisabled = planLoading || (!deltaMode && brief.trim().length === 0)
-  const canSubmit = prompt.trim().length > 0 && !loading && customSizeError === null
+  const canSubmit =
+    prompt.trim().length > 0 &&
+    !loading &&
+    customSizeError === null &&
+    transparentFormatError === null
   // Warning only — never gates canSubmit. The studio never silently overrules the user.
-  const transparencyClaim = detectTransparencyClaim(prompt)
+  const transparencyMismatch = transparencyClaimMismatchesBackground(prompt, background)
 
   function buildOverrides(): PlanOverrides | undefined {
     const overrides: PlanOverrides = {}
     if (pinnedFields.has('model')) overrides.model = model
     if (pinnedFields.has('size')) overrides.size = effectiveSize
     if (pinnedFields.has('quality')) overrides.quality = quality
+    if (pinnedFields.has('background')) overrides.background = background
     if (pinnedFields.has('n')) overrides.n = n
     if (pinnedFields.has('moderation')) overrides.moderation = moderation
-    // No `input_fidelity` override: gpt-image-2 rejects the parameter outright.
+    // No `input_fidelity` override: neither generatable model accepts the parameter.
     return Object.keys(overrides).length > 0 ? overrides : undefined
   }
 
@@ -484,13 +534,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
     setModel(planSettings.model)
     applySizeString(planSettings.size)
     setQuality(planSettings.quality)
-    // A plan may still echo `transparent` (the contract keeps the value for historical sidecars);
-    // it is not producible today, so coerce and say so rather than sending a request that 400s.
-    if (planSettings.background === 'transparent') {
-      setCoercionNotice(
-        `The plan asked for a transparent background. ${DEFAULT_MODEL} has no alpha channel, so it was changed to opaque.`,
-      )
-    }
+    setBackground(planSettings.background)
     setN(planSettings.n)
     setModeration(planSettings.moderation)
   }
@@ -562,6 +606,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
     const preset = PRESETS.find((candidate) => candidate.id === id)
     if (!preset) return
     setQualityPinned(preset.request.quality)
+    setBackgroundPinned(preset.request.background)
     if (isSizePresetValue(preset.request.size)) {
       setSizeChoicePinned(preset.request.size)
       setCustomSize('')
@@ -591,7 +636,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
       model,
       size: effectiveSize,
       quality,
-      background: 'opaque',
+      background,
       output_format: outputFormat,
       n,
       moderation,
@@ -607,11 +652,12 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
       model,
       size: effectiveSize,
       quality,
-      background: 'opaque',
+      background,
       output_format: outputFormat,
       n,
       moderation,
-      // No `input_fidelity`: gpt-image-2 400s on the parameter (it is locked to high internally).
+      // No `input_fidelity`: no generatable model accepts the parameter (both are locked to high
+      // fidelity internally and 400 on it outright).
       ...(parent !== undefined ? { parent } : {}),
       ...buildSaveContext(),
     }
@@ -767,7 +813,8 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
                 </Badge>
               </Group>
               <Text size="xs" c="dimmed">
-                The studio generates with {DEFAULT_MODEL} only.
+                auto routes drafts (low/medium) to {DEFAULT_MODEL} and edits/high+ finals to
+                sunburst.
               </Text>
             </Stack>
             <Select
@@ -778,6 +825,7 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
                 if (value) setOutputFormat(value as GenerateRequest['output_format'])
               }}
               allowDeselect={false}
+              error={transparentFormatError ?? undefined}
             />
             <NumberInput
               label="Images"
@@ -821,6 +869,26 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
             />
           </Stack>
 
+          <Stack gap={4}>
+            <Text size="sm" fw={500}>
+              Background
+            </Text>
+            <SegmentedControl
+              value={background}
+              onChange={(value) => setBackgroundPinned(value as GenerateRequest['background'])}
+              data={
+                MODEL_CAPABILITIES[resolvedModel].transparentBackground
+                  ? BACKGROUND_OPTIONS
+                  : BACKGROUND_OPTIONS.filter((value) => value !== 'transparent')
+              }
+            />
+            {transparentFormatError !== null && (
+              <Text size="xs" c="red">
+                {transparentFormatError}
+              </Text>
+            )}
+          </Stack>
+
           <Group grow align="flex-start">
             {outputFormat !== 'png' && (
               <NumberInput
@@ -850,12 +918,12 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
             />
           </Group>
 
-          {transparencyClaim !== null && (
-            <Alert color="yellow" variant="light" title="Prompt asks for transparency">
-              This prompt mentions “{transparencyClaim}”, but {DEFAULT_MODEL} has no alpha channel
-              and cannot produce one — generating anyway tends to paint a fake transparency
-              checkerboard into the image instead of erroring. Consider rewording to something like
-              “on a plain solid white background”.
+          {transparencyMismatch !== null && (
+            <Alert color="yellow" variant="light" title="Prompt/background mismatch">
+              This prompt mentions “{transparencyMismatch}”, but the request sends{' '}
+              <strong>background: {background}</strong> — generating anyway tends to paint a fake
+              transparency checkerboard into the image instead of erroring. Either set Background to
+              “transparent” above, or reword the prompt (e.g. “on a plain solid white background”).
             </Alert>
           )}
 

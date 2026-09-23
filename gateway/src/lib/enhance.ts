@@ -12,6 +12,7 @@ import {
   routingReason,
   validateBackgroundForModel,
   validateInputFidelityForModel,
+  validateQualityForModel,
   validateSizeForModel,
   type Intent,
   type PlanMode,
@@ -124,18 +125,19 @@ const llmProposedSettingsSchema = z.object({
   /**
    * `.catch('auto')` rather than a bare enum: the model is advisory, and a
    * proposal naming a retired model (the enhance model has gpt-image-1.5 /
-   * -mini in its training data, and the playbook is edited independently of
-   * this file) must degrade to "let the gateway pick" — not fail the whole
-   * plan and burn a retry round-trip on a field the server overrules anyway.
-   * The enum still guarantees whatever survives here is generatable today, so
-   * the settings this returns always validate against the request schema.
+   * -1-mini / -2 in its training data, and the playbook is edited
+   * independently of this file) must degrade to "let the gateway pick" — not
+   * fail the whole plan and burn a retry round-trip on a field the server
+   * overrules anyway. The enum still guarantees whatever survives here is
+   * generatable today, so the settings this returns always validate against
+   * the request schema.
    */
   model: z
     .enum([...IMAGE_MODELS, 'auto'] as const)
     .default('auto')
     .catch('auto'),
   size: z.string().default('auto'),
-  quality: z.enum(['low', 'medium', 'high', 'auto']).default('auto'),
+  quality: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'auto']).default('auto'),
   background: z.enum(['transparent', 'opaque', 'auto']).default('auto'),
   n: z.number().int().min(1).max(10).default(1),
   moderation: z.enum(['auto', 'low']).default('auto'),
@@ -172,13 +174,13 @@ The JSON object must have exactly this shape:
   "assumptions": ["<free-text notes on what you assumed or corrected>"],
   "warnings": [{ "code": "<short_code>", "severity": "warn"|"rewrite"|"hard", "message": "<explanation>", "suggested_rewrite": "<optional compliant rewrite>", "moderation_suggestion": "low", "predicted_stage": "input"|"output" }],
   "proposed_settings": {
-    "model": "gpt-image-2"|"auto",
+    "model": "gpt-image-2.5-flare"|"gpt-image-2.5-sunburst"|"auto" (prefer "auto" — the gateway routes flare for drafts, sunburst for edits and high/xhigh/max finals),
     "size": "<'auto', a preset (1024x1024, 1536x1024, 1024x1536), or a custom WxH>",
-    "quality": "low"|"medium"|"high"|"auto",
-    "background": "opaque"|"auto" (never "transparent" — no available model has an alpha channel),
+    "quality": "low"|"medium"|"high"|"xhigh"|"max"|"auto",
+    "background": "transparent"|"opaque"|"auto" ("transparent" needs output_format png or webp — never jpeg),
     "n": <integer 1-10>,
     "moderation": "auto"|"low",
-    "input_fidelity": "high"|"low" (omit unless this is an edit with identity/product fidelity concerns),
+    "input_fidelity": "high"|"low" (omit — no available model supports it; the gateway rejects it outright),
     "partial_images": <integer 0-3, 1 for a live single-image preview>
   },
   "constraint_block": "<optional trailing constraint clause, e.g. a restated preserve list; empty/omitted if none>"
@@ -548,10 +550,11 @@ export function resolveSettings(args: {
 }): ResolvedSettings {
   const notes: string[] = []
   const merged = overlaySettings(args.proposed, args.overrides)
+  const endpoint = args.hasReferences ? 'edit' : 'generate'
 
-  const model = resolveModel({ model: merged.model })
-  const reason = routingReason({ model: merged.model })
-  if (reason) notes.push(`Rerouted to ${model}: ${reason}.`)
+  const model = resolveModel({ model: merged.model, endpoint, quality: merged.quality })
+  const reason = routingReason({ model: merged.model, endpoint, quality: merged.quality })
+  if (reason) notes.push(`Routed to ${model}: ${reason}.`)
 
   // `/enhance` is advisory — it returns settings the user is about to run, so
   // it corrects an impossible background here (with a note) instead of handing
@@ -562,6 +565,13 @@ export function resolveSettings(args: {
   if (backgroundError) {
     notes.push(`Forced background to opaque: ${backgroundError}.`)
     background = 'opaque'
+  }
+
+  let quality = merged.quality
+  const qualityError = validateQualityForModel(model, quality)
+  if (qualityError) {
+    notes.push(`Dropped to quality high: ${qualityError}.`)
+    quality = 'high'
   }
 
   let size = merged.size
@@ -584,10 +594,10 @@ export function resolveSettings(args: {
   }
 
   const settings: PlanSettings = {
-    endpoint: args.hasReferences ? 'edit' : 'generate',
+    endpoint,
     model,
     size,
-    quality: merged.quality,
+    quality,
     background,
     n: merged.n,
     moderation: merged.moderation,

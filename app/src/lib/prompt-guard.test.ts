@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { detectTransparencyClaim } from './prompt-guard'
+import { detectTransparencyClaim, transparencyClaimMismatchesBackground } from './prompt-guard'
 
 describe('detectTransparencyClaim', () => {
   test('matches "transparent background"', () => {
@@ -82,5 +82,34 @@ describe('detectTransparencyClaim', () => {
     expect(
       detectTransparencyClaim('studio product photo on a plain white background, soft shadow'),
     ).toBeNull()
+  })
+})
+
+describe('transparencyClaimMismatchesBackground', () => {
+  test('flags a transparency claim when background is opaque — the checkerboard failure mode', () => {
+    expect(
+      transparencyClaimMismatchesBackground(
+        'a cat, isolated on a transparent background',
+        'opaque',
+      ),
+    ).toBe('transparent background')
+  })
+
+  test('flags a transparency claim when background is auto too', () => {
+    expect(transparencyClaimMismatchesBackground('a fox cutout sticker', 'auto')).toBe('cutout')
+  })
+
+  test('does not flag a transparency claim when background is transparent — it is correct there', () => {
+    expect(
+      transparencyClaimMismatchesBackground(
+        'a cat, isolated on a transparent background',
+        'transparent',
+      ),
+    ).toBeNull()
+  })
+
+  test('returns null for a prompt with no transparency claim, regardless of background', () => {
+    expect(transparencyClaimMismatchesBackground('a lighthouse at dusk', 'opaque')).toBeNull()
+    expect(transparencyClaimMismatchesBackground('a lighthouse at dusk', 'transparent')).toBeNull()
   })
 })

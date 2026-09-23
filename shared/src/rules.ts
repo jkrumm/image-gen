@@ -6,6 +6,7 @@ import {
   SIZE_PRESETS,
   type ImageModel,
   type KnownImageModel,
+  type LegacyRequestModel,
 } from './contract.js'
 
 /**
@@ -18,42 +19,125 @@ import {
  * enforcement; the app uses these to keep invalid states unreachable.
  */
 
+/** Quality tiers a request may name — see `MODEL_CAPABILITIES.extendedQuality`. */
+export type RequestQuality = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto'
+
+const SUNBURST: ImageModel = 'gpt-image-2.5-sunburst'
+const FLARE: ImageModel = 'gpt-image-2.5-flare'
+
+function isFinalizingQuality(quality: RequestQuality): boolean {
+  return quality === 'high' || quality === 'xhigh' || quality === 'max'
+}
+
+/** True when MODEL is a currently-generatable model (a member of `IMAGE_MODELS`) — as opposed to
+ * `'auto'` or a `LegacyRequestModel`, both of which need routing. Named distinctly from the
+ * `KnownImageModel`-keyed `isGeneratableModel` further down (different domain, same idea). */
+function isExplicitModel(model: ImageModel | 'auto' | LegacyRequestModel): model is ImageModel {
+  return (IMAGE_MODELS as readonly string[]).includes(model)
+}
+
+/** The model `'auto'` (or a retired id, see below) resolves to for ENDPOINT/QUALITY — the routing
+ * rule itself, factored out so `resolveModel` and `routingReason` can't drift against each other. */
+function autoRoutedModel(endpoint: 'generate' | 'edit', quality: RequestQuality): ImageModel {
+  if (endpoint === 'edit') return SUNBURST
+  return isFinalizingQuality(quality) ? SUNBURST : FLARE
+}
+
+/** Prose fragment naming *why* `autoRoutedModel` picked what it picked, without the model name —
+ * `routingReason` prefixes it with `routed to <model> for `. */
+function autoRoutingWhy(endpoint: 'generate' | 'edit', quality: RequestQuality): string {
+  if (endpoint === 'edit') return 'editing/reference precision'
+  return isFinalizingQuality(quality)
+    ? `a ${quality}-quality final render`
+    : `a ${quality === 'auto' ? 'default' : quality}-quality draft`
+}
+
 /**
- * Resolve the model that will actually serve a request. `auto` becomes the
- * default (and only) generatable model.
+ * Resolve the model that will actually serve a request. An explicit,
+ * currently-generatable model is always honoured verbatim. `'auto'` — and a
+ * `LegacyRequestModel` id (a retired model a pre-2026-09-23 app build may
+ * still send; see `LEGACY_REQUEST_MODELS`'s doc comment) — are routed
+ * identically, by endpoint and quality:
  *
- * Previously rerouted a transparent-background request to a model with an
- * alpha channel when the base model lacked one. Generation is now
- * gpt-image-2-only, so there is no fallback target left to reroute to — a
- * transparent-background request is rejected outright by
- * `validateBackgroundForModel` instead of silently routed elsewhere.
+ * - `/images/edits` always routes to `sunburst` — editing/reference precision
+ *   matters more than the (token-identical) latency difference.
+ * - `/images/generations` at `high`/`xhigh`/`max` routes to `sunburst` — the
+ *   final render.
+ * - `/images/generations` at `low`/`medium`/`auto` routes to `flare` — the
+ *   draft/iteration loop, where flare's lower latency pays off.
  */
-export function resolveModel(req: { model: ImageModel | 'auto' }): ImageModel {
-  return req.model === 'auto' ? DEFAULT_MODEL : req.model
+export function resolveModel(req: {
+  model: ImageModel | 'auto' | LegacyRequestModel
+  endpoint: 'generate' | 'edit'
+  quality: RequestQuality
+}): ImageModel {
+  if (isExplicitModel(req.model)) return req.model
+  return autoRoutedModel(req.endpoint, req.quality)
 }
 
 /**
- * Why a request was rerouted, for surfacing to the user. Always null now:
- * with a single generatable model there is nothing left to reroute to (see
- * `resolveModel`). Kept for interface stability with existing callers.
+ * Why a request was routed the way it was, for surfacing to the user. Null
+ * whenever the caller named an explicit, currently-generatable model —
+ * nothing was rerouted. A `LegacyRequestModel` id routes exactly like
+ * `'auto'` (see `resolveModel`) but still reports `routed: true`, naming the
+ * retired id, so a still-live pre-2026-09-23 app build is visible in the
+ * response rather than silently laundered into an ordinary auto-route.
  */
-export function routingReason(_req: { model: ImageModel | 'auto' }): string | null {
-  return null
+export function routingReason(req: {
+  model: ImageModel | 'auto' | LegacyRequestModel
+  endpoint: 'generate' | 'edit'
+  quality: RequestQuality
+}): string | null {
+  if (isExplicitModel(req.model)) return null
+  const target = autoRoutedModel(req.endpoint, req.quality)
+  const why = autoRoutingWhy(req.endpoint, req.quality)
+  if (req.model === 'auto') return `routed to ${target} for ${why}`
+  return `${req.model} is retired — routed to ${target} for ${why}`
 }
 
 /**
- * `background: "transparent"` needs an alpha channel. gpt-image-2 — the only
- * generatable model — hard-400s on it (permanent, live-probed), and there is
- * no other generatable model left to fall back to, so this rejects outright
- * rather than rerouting.
+ * `background: "transparent"` needs an alpha channel. Both generatable models
+ * support one (live-probed 2026-09-23: real RGBA, colortype 6) — this now
+ * only rejects a legacy/unsupported model passed in directly (e.g. replay
+ * naming a retired `KnownImageModel` before it is coerced). Takes a
+ * `KnownImageModel` (not just `ImageModel`) so a caller replaying/displaying a
+ * historical generation can validate against the model it actually ran on.
  */
 export function validateBackgroundForModel(
-  model: ImageModel,
+  model: KnownImageModel,
   background: 'transparent' | 'opaque' | 'auto',
 ): string | null {
   if (background !== 'transparent') return null
   if (MODEL_CAPABILITIES[model].transparentBackground) return null
   return `${model} has no alpha channel and cannot generate a transparent background`
+}
+
+/**
+ * `background: "transparent"` needs an output format with an alpha channel.
+ * jpeg has none — reject the combination outright rather than letting upstream
+ * silently drop transparency or 400 unhelpfully.
+ */
+export function validateTransparentOutputFormat(
+  background: 'transparent' | 'opaque' | 'auto',
+  outputFormat: 'png' | 'webp' | 'jpeg',
+): string | null {
+  if (background !== 'transparent') return null
+  if (outputFormat !== 'jpeg') return null
+  return 'a transparent background needs png or webp output — jpeg has no alpha channel'
+}
+
+/**
+ * `xhigh`/`max` are only valid on a model with `MODEL_CAPABILITIES.extendedQuality`
+ * — the legacy models (and a retired `gpt-image-2`) predate them and 400 on
+ * an unrecognized quality value.
+ */
+export function validateQualityForModel(
+  model: KnownImageModel,
+  quality: RequestQuality,
+): string | null {
+  if (quality !== 'xhigh' && quality !== 'max') return null
+  if (MODEL_CAPABILITIES[model].extendedQuality) return null
+  return `${model} does not support quality "${quality}" (only low/medium/high/auto)`
 }
 
 const SIZE_PATTERN = /^(\d{2,4})x(\d{2,4})$/
@@ -70,7 +154,7 @@ export function isSizePreset(size: string): boolean {
  * `/images/generations` and `/images/edits` (gpt-image-2 accepts arbitrary
  * sizes on both, verified up to 2560x1440; the others are presets-only on both).
  */
-export function validateSizeForModel(model: ImageModel, size: string): string | null {
+export function validateSizeForModel(model: KnownImageModel, size: string): string | null {
   if (isSizePreset(size)) return null
 
   if (!MODEL_CAPABILITIES[model].customSize) {
@@ -192,26 +276,28 @@ function isGeneratableModel(model: KnownImageModel): model is ImageModel {
  * actually generate — the chokepoint every replay path must go through.
  * Accepts a `KnownImageModel` (not just `ImageModel`) because replay sources
  * its model from a sidecar, which may name a retired model: a sidecar
- * recorded against gpt-image-1.5 replays on gpt-image-2 today, since that is
- * the only model left that can generate, so the size returned must be valid
- * for gpt-image-2, not for the legacy model the sidecar names.
+ * recorded against gpt-image-1.5 replays on `DEFAULT_MODEL` today (this
+ * function has no endpoint/quality context to run the full `resolveModel`
+ * routing rule, so it falls back to the default rather than sunburst), so the
+ * size returned must be valid for that model, not for the legacy model the
+ * sidecar names.
  *
- * Exists because gpt-image-2 returns non-16-divisible dimensions for
- * `size: "auto"` (observed live: a 1024x1024 reference image produced a
- * 1254x1254 output). The gateway records that dimension truthfully into the
- * sidecar's `params.size`, but a truthful `params.size` is not necessarily a
- * *replayable* one — re-sending "1254x1254" 400s upstream ("width and height
- * must be divisible by 16") and fails `validateSizeForModel` locally too. Every
- * path that turns a recorded size back into a request (replay, re-edit, "use as
- * seed") must snap it back into validity first.
+ * Exists because gpt-image-2 (and its 2.5 successors) return non-16-divisible
+ * dimensions for `size: "auto"` (observed live: a 1024x1024 reference image
+ * produced a 1254x1254 output). The gateway records that dimension truthfully
+ * into the sidecar's `params.size`, but a truthful `params.size` is not
+ * necessarily a *replayable* one — re-sending "1254x1254" 400s upstream
+ * ("width and height must be divisible by 16") and fails `validateSizeForModel`
+ * locally too. Every path that turns a recorded size back into a request
+ * (replay, re-edit, "use as seed") must snap it back into validity first.
  *
  * `'auto'`, exact presets, and anything `validateSizeForModel` already accepts
  * for the resolved generatable model are returned unchanged. A `WxH` on a
  * presets-only generatable model folds to the closest-aspect-ratio preset —
- * unreachable today since gpt-image-2 accepts custom sizes, but kept generic
- * for when a presets-only model is generatable again. A `WxH` on gpt-image-2
- * is snapped into the GPT_IMAGE_2_SIZE envelope. Unparseable input falls back
- * to `'auto'` rather than throwing.
+ * unreachable today since every generatable model accepts custom sizes, but
+ * kept generic for when a presets-only model is generatable again. A `WxH` on
+ * a customSize model is snapped into the shared `GPT_IMAGE_2_SIZE` envelope.
+ * Unparseable input falls back to `'auto'` rather than throwing.
  */
 export function snapSizeForModel(model: KnownImageModel, size: string): string {
   const generatableModel = isGeneratableModel(model) ? model : DEFAULT_MODEL
@@ -239,7 +325,7 @@ export function snapSizeForModel(model: KnownImageModel, size: string): string {
  * model exists to suggest as a fallback.
  */
 export function validateInputFidelityForModel(
-  model: ImageModel,
+  model: KnownImageModel,
   inputFidelity: 'high' | 'low' | undefined,
 ): string | null {
   if (inputFidelity === undefined) return null

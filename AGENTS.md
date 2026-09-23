@@ -58,33 +58,36 @@ cd gateway && secrets-run run --env-file=.env.local.tpl -- bun /path/to/scratch/
 
 **When a brief hands you a "verified fact", trust it. When it hands you a generalization ("X is per-model, so it must hold for Y"), probe Y.** That exact generalization is what produced this session's one real bug: SSE event names turned out to be per-*endpoint* (`image_edit.*`), and matching only `image_generation.*` silently broke every streamed edit.
 
-## Load-bearing API facts (live-probed against our own endpoint 2026-07-16 — see docs/research/endpoint-verification.md)
+## Load-bearing API facts (live-probed against our own endpoint — 2026-07-16 for gpt-image-2/1.5/1-mini, 2026-09-23 for the 2.5 pair — see docs/research/endpoint-verification.md)
 
 These come from probing the upstream we actually call, not from vendor docs — public write-ups get several of them wrong. Re-probe before trusting any contradicting source.
 
-### The studio is single-model: gpt-image-2 only
+### The studio generates on two models: gpt-image-2.5-flare / gpt-image-2.5-sunburst
 
-**All new generations run on `gpt-image-2`.** `gpt-image-1.5` and `gpt-image-1-mini` are **retired from the generate path** and permanently supported on the **read path**. Two enums encode exactly this, and the distinction is load-bearing:
+**All new generations run on `gpt-image-2.5-flare` (speed-optimized, drafts) or `gpt-image-2.5-sunburst` (quality-optimized, editing precision/final renders).** `gpt-image-2`, `gpt-image-1.5` and `gpt-image-1-mini` are **retired from the generate path** (2026-09-23) and permanently supported on the **read path**. Two enums encode exactly this, and the distinction is load-bearing:
 
 | Enum | Path | Contents | May shrink? |
 |-|-|-|-|
-| `IMAGE_MODELS` | generate | `['gpt-image-2']` | yes |
-| `KNOWN_IMAGE_MODELS` | read (sidecar parsing) | all three, type `KnownImageModel` | **never** |
+| `IMAGE_MODELS` | generate | `['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']` | yes |
+| `KNOWN_IMAGE_MODELS` | read (sidecar parsing) | all five, type `KnownImageModel` | **never** |
 
-`MODEL_CAPABILITIES` is keyed by `KnownImageModel` and still holds all three — it describes what each model *is*, which is how old sidecars stay interpretable.
+`MODEL_CAPABILITIES` is keyed by `KnownImageModel` and still holds all five — it describes what each model *is*, which is how old sidecars stay interpretable.
 
 > **Retiring a model is never a subtractive enum edit.** `listGenerations()` silently skips sidecars that fail to parse, so removing a model id from the schema makes existing library entries vanish with only a log warning. Split the enums: `KNOWN_IMAGE_MODELS` (read path, never shrink) vs `IMAGE_MODELS` (generate path, safe to shrink).
 
-**Transparency is UNAVAILABLE — an open gap, not scheduled** (this line is the one place that status lives; `PRD.md` and `docs/research/transparency-and-vector.md` point here). gpt-image-2 has no alpha channel (hard 400 on `background: "transparent"`, both endpoints, probe-verified), and it is the only model we generate on — so the studio has no way to emit transparency at all. `TRANSPARENCY_MODEL` and the reroute it powered are **gone**; `validateBackgroundForModel()` hard-rejects `background: 'transparent'`. The documented restoration path, when someone picks it up, is **local matting via Apple Vision** (`VNGenerateForegroundInstanceMaskRequest`) on a plain-white-background generation — permissive licence, zero dependencies, macOS-native (`docs/research/transparency-and-vector.md`). **Never** propose chroma-key / "generate on a flat colour and key it out": that same doc records it as a failure (colour leakage, non-uniform solids, 1px halos).
+**Transparency is AVAILABLE again** on both generatable models (probe-verified 2026-09-23: `background: "transparent"` + png/webp returns real RGBA, colortype 6 — subject alpha ~252–253, not a full 255, but a real alpha channel). This closes the gap the single-model gpt-image-2 era opened: `validateBackgroundForModel()` now passes for both 2.5 models, and `validateTransparentOutputFormat()` is the new guard — `transparent` needs `png`/`webp` output, `jpeg` has no alpha and is rejected. Apple Vision matting (`docs/research/transparency-and-vector.md`) was the interim restoration path while no generatable model had an alpha channel; it is documented there only as history now. **Still never** propose chroma-key / "generate on a flat colour and key it out" — that doc records it as a separate, permanent failure (colour leakage, non-uniform solids, 1px halos), unrelated to whether native alpha exists.
+
+Routing for `model: 'auto'` (`resolveModel`/`routingReason` in `shared/src/rules.ts`): an edit always routes to `sunburst`; a generate at `quality: high|xhigh|max` routes to `sunburst`; a generate at `quality: low|medium|auto` routes to `flare`. An explicit model is always honoured. `quality` also gained two tiers, `xhigh` and `max`, gated by `MODEL_CAPABILITIES.extendedQuality` (`validateQualityForModel`) — the legacy models (and gpt-image-2) predate them and 400 on an unrecognized value.
 
 ### Gotchas that cost real debugging (full probe tables, cost numbers, per-model matrix: `docs/research/endpoint-verification.md`)
 
 - **Capabilities are per-model, not per-endpoint** (`MODEL_CAPABILITIES` in `shared/src/contract.ts` is the single source of truth) — with one exception: **SSE event names are per-endpoint**: `/images/generations` emits `image_generation.*`, `/images/edits` emits `image_edit.*` — identical payloads, different namespace. Matching only `image_generation.*` silently breaks every streamed edit.
-- gpt-image-2 rejects **`input_fidelity`** outright (locked to high internally) — never send it. `background: 'transparent'` and `input_fidelity` remain valid **schema** values so historical sidecars still parse; valid to parse ≠ valid to send.
-- Streaming is **n=1 only**; overhead is flat per request (+77 output tokens, ~+$0.002), not per partial — upstream may send fewer partials than requested, never block on a fixed count.
-- The upstream vendor proxy wraps 400-class validation errors in an **HTTP 503** with `"type": "..._user_error"` — never retry these; `upstream.ts` already keys off `user_error`.
-- **The painted-checkerboard failure mode** (live bug, both models): if the prompt text asks for "transparent background" but the request sends `background: "opaque"`, the model doesn't error — it paints a fake checkerboard into the opaque pixels. Always check `hasAlpha`/PNG colortype on output, never trust the image visually. Since every request is now `opaque`, the playbook rule "never write 'transparent background' into prompt text" is a flat prohibition.
-- Cost: low ≈ $0.006/image, high ≈ $0.211 (**35.8× low** — why quality stays adjustable and previews default on). Numbers are gpt-image-2-specific — do not reuse them for gpt-image-1.5 (~2.2× more expensive at the same tier).
+- **Streaming partials are per-model too, on the 2.5 pair**: `gpt-image-2.5-flare` emits ZERO partial frames regardless of `partial_images` (only the `completed` event arrives, no overhead tokens); `sunburst` emits partials as expected (~77 output tokens each). Never build UI that assumes at least one partial arrives.
+- Neither 2.5 model accepts **`input_fidelity`** — hard 400 ("Unknown parameter: 'input_fidelity'"), locked to high internally — never send it. `background: 'transparent'` and `input_fidelity` remain valid **schema** values so historical sidecars still parse; valid to parse ≠ valid to send.
+- Streaming is **n=1 only**; upstream may send fewer partials than requested, never block on a fixed count.
+- The upstream vendor proxy wraps 400-class validation errors in an **HTTP 503** — two shapes: the historical one with `"type": "..._user_error"` in the body, and the gpt-image-2.5-era one (`StatusCode: BadRequest`-prefixed, `"type":"invalid_request_error"`, **no** `user_error` substring at all). Never retry either; `upstream.ts`'s `isWrappedUserErrorBody()` recognizes both.
+- **The painted-checkerboard failure mode** (live bug, still true on the 2.5 models): if the prompt text asks for "transparent background" while the request sends `background: "opaque"`, the model doesn't error — it paints a fake checkerboard into the opaque pixels. Always check `hasAlpha`/PNG colortype on output, never trust the image visually. The playbook rule is no longer a flat prohibition: prompt text must simply *match* the `background` parameter sent (transparent wording is correct when `background: "transparent"`, wrong otherwise).
+- Cost (per generatable model, identical pricing between flare/sunburst): low ≈ $0.006/image, medium ≈ $0.013, high ≈ $0.053 (**~9× low**), xhigh ≈ $0.094, max ≈ $0.211 (**~35.8× low**) — why quality stays adjustable and previews default on. gpt-image-2's own `medium` anchor is now measured at 1756 tokens (was interpolated to 1173) — don't reuse any of these numbers for gpt-image-1.5 (~2.2× more expensive at the same tier).
 
 ## Validation surface (know what "green" actually proves)
 

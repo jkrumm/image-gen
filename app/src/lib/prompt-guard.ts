@@ -1,13 +1,13 @@
 /**
- * gpt-image-2 is the only model this studio generates with, and it has no alpha channel — every
- * request now hard-codes `background: 'opaque'` (see Create.tsx). Nothing stops the prompt TEXT
- * from still claiming transparency: a draft written before the studio went single-model, or a
- * hand-edit in raw mode, can still say "isolated on a transparent background".
+ * Both generatable models (`gpt-image-2.5-flare`/`sunburst`) have a real alpha channel — a
+ * transparent background is producible again. The rule is no longer a flat prohibition: prompt
+ * TEXT must match the `background` parameter the request actually sends.
  *
- * That mismatch is probe-verified to NOT error. The model silently paints a fake transparency
- * checkerboard into the opaque pixels instead — output has no alpha (PNG colortype 2), and the
- * checkerboard is baked-in garbage, not a background that can be keyed out afterwards. This guard
- * exists solely to warn about that exact failure mode before a user hits it again.
+ * Probe-verified failure mode (still true on the 2.5 models, unchanged): send
+ * `background: "opaque"` while the prompt claims transparency, and the model doesn't ignore the
+ * mismatch — it paints a fake transparency checkerboard into the opaque pixels instead. Output has
+ * no alpha (PNG colortype 2), and the checkerboard is baked-in garbage, not a real background that
+ * can be keyed out afterwards. So: the claim is only a problem when `background` disagrees with it.
  */
 const TRANSPARENCY_CLAIM_PATTERN =
   /transparent background|transparent bg|on transparency|with transparency|without a background|without background|no background|remove the background|background removed|cut-?out|cut out|alpha channel|checkerboard/i
@@ -17,4 +17,19 @@ const TRANSPARENCY_CLAIM_PATTERN =
 export function detectTransparencyClaim(prompt: string): string | null {
   const match = TRANSPARENCY_CLAIM_PATTERN.exec(prompt)
   return match ? match[0] : null
+}
+
+/**
+ * True when the prompt's transparency claim (if any) contradicts the request's `background`
+ * value — the exact condition that triggers the checkerboard failure mode. A transparency claim
+ * alongside `background: "transparent"` is correct and expected; only `opaque`/`auto` disagree
+ * with it.
+ */
+export function transparencyClaimMismatchesBackground(
+  prompt: string,
+  background: 'transparent' | 'opaque' | 'auto',
+): string | null {
+  const claim = detectTransparencyClaim(prompt)
+  if (!claim) return null
+  return background === 'transparent' ? null : claim
 }

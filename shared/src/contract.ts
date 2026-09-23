@@ -7,7 +7,13 @@ import { z } from 'zod'
  * vanish instead of erroring. Use this for anything that validates
  * stored/historical data.
  */
-export const KNOWN_IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1-mini'] as const
+export const KNOWN_IMAGE_MODELS = [
+  'gpt-image-2',
+  'gpt-image-1.5',
+  'gpt-image-1-mini',
+  'gpt-image-2.5-flare',
+  'gpt-image-2.5-sunburst',
+] as const
 export type KnownImageModel = (typeof KNOWN_IMAGE_MODELS)[number]
 
 /**
@@ -15,38 +21,81 @@ export type KnownImageModel = (typeof KNOWN_IMAGE_MODELS)[number]
  * model from generation only ever removes it from here, never from
  * `KNOWN_IMAGE_MODELS`. Use this for anything that validates a new request or
  * describes a response to one.
+ *
+ * `gpt-image-2.5-flare` is speed-optimized (drafts, iteration); `sunburst` is
+ * quality-optimized (editing precision, final renders) — see `resolveModel`
+ * in `rules.ts` for the routing rule between the two. `gpt-image-2` left the
+ * generate path 2026-09-23 in favor of these (undated alias ids, not the
+ * dated `-2026-09-08` snapshots).
  */
-export const IMAGE_MODELS = ['gpt-image-2'] as const
+export const IMAGE_MODELS = ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'] as const
 export type ImageModel = (typeof IMAGE_MODELS)[number]
 
-export const DEFAULT_MODEL: ImageModel = 'gpt-image-2'
+export const DEFAULT_MODEL: ImageModel = 'gpt-image-2.5-flare'
+
+/**
+ * Model ids a fresh **request** may still name that are NOT in `IMAGE_MODELS` — a narrow deploy
+ * compat shim, not part of the studio's real model surface. The app build installed before this
+ * migration (2026-09-23, when `IMAGE_MODELS` moved off `gpt-image-2`) sends `model: "gpt-image-2"`
+ * explicitly (its era's `DEFAULT_MODEL`); without this, every one of its requests 422s until it is
+ * rebuilt. `resolveModel`/`routingReason` (`rules.ts`) treat any id here exactly like `'auto'` for
+ * routing, but report `routed: true` with a reason naming the retired id, so a still-live legacy
+ * caller is visible in the response rather than silently laundered into an ordinary auto-route.
+ *
+ * The current app's own `model` state never assigns one of these — it types itself against
+ * `ImageModel | 'auto'` directly rather than reusing `GenerateRequest['model']` for that reason.
+ * Removable once no pre-2026-09-23 app build is installed (check `make app-status`'s fingerprint).
+ */
+export const LEGACY_REQUEST_MODELS = ['gpt-image-2'] as const
+export type LegacyRequestModel = (typeof LEGACY_REQUEST_MODELS)[number]
 
 /**
  * Per-model capabilities, verified by live probe against the upstream endpoint
- * (2026-07-16 — see docs/research/endpoint-verification.md). These are model
- * properties, not endpoint properties: each holds identically on
- * `/images/generations` and `/images/edits`. Keyed by `KnownImageModel` (not
- * `ImageModel`) because the app still renders capability-derived info for
- * historical generations and replay must know what a legacy model supported.
+ * (2026-07-16 for gpt-image-2/1.5/1-mini, 2026-09-23 for the 2.5 pair — see
+ * docs/research/endpoint-verification.md). These are model properties, not
+ * endpoint properties: each holds identically on `/images/generations` and
+ * `/images/edits`. Keyed by `KnownImageModel` (not `ImageModel`) because the
+ * app still renders capability-derived info for historical generations and
+ * replay must know what a legacy model supported.
  */
 export const MODEL_CAPABILITIES = {
   'gpt-image-2': {
     /** Accepts arbitrary `WxH` within GPT_IMAGE_2_SIZE; others take presets only. */
     customSize: true,
-    /** gpt-image-2 rejects `background: "transparent"` outright — no generatable model supports it. */
+    /** gpt-image-2 rejects `background: "transparent"` outright. */
     transparentBackground: false,
     /** gpt-image-2 is locked to high fidelity and 400s if `input_fidelity` is sent at all. */
     inputFidelity: false,
+    /** Retired before `xhigh`/`max` existed — never valid to send. */
+    extendedQuality: false,
   },
   'gpt-image-1.5': {
     customSize: false,
     transparentBackground: true,
     inputFidelity: true,
+    extendedQuality: false,
   },
   'gpt-image-1-mini': {
     customSize: false,
     transparentBackground: true,
     inputFidelity: false,
+    extendedQuality: false,
+  },
+  'gpt-image-2.5-flare': {
+    /** Accepts arbitrary `WxH` within GPT_IMAGE_2_SIZE, same envelope as gpt-image-2. */
+    customSize: true,
+    /** Real alpha channel — probe-verified `background: "transparent"` + png returns RGBA (colortype 6). */
+    transparentBackground: true,
+    /** Hard 400 "Unknown parameter: 'input_fidelity'" — probe-verified. */
+    inputFidelity: false,
+    /** Accepts `xhigh`/`max` in addition to the legacy `low|medium|high|auto` — probe-verified 200. */
+    extendedQuality: true,
+  },
+  'gpt-image-2.5-sunburst': {
+    customSize: true,
+    transparentBackground: true,
+    inputFidelity: false,
+    extendedQuality: true,
   },
 } as const satisfies Record<
   KnownImageModel,
@@ -54,16 +103,21 @@ export const MODEL_CAPABILITIES = {
     customSize: boolean
     transparentBackground: boolean
     inputFidelity: boolean
+    extendedQuality: boolean
   }
 >
 
-/** Sizes every model accepts. gpt-image-2 additionally accepts arbitrary `WxH`. */
+/** Sizes every model accepts. A `customSize`-capable model additionally accepts arbitrary `WxH`. */
 export const SIZE_PRESETS = ['auto', '1024x1024', '1536x1024', '1024x1536'] as const
 export type SizePreset = (typeof SIZE_PRESETS)[number]
 
-// gpt-image-2 arbitrary-size constraints (edges multiples of 16, ratio <= 3:1,
-// 655_360..8_294_400 total px, max edge < 3840). Sizes above 2560x1440 are
-// experimental upstream.
+// Arbitrary-size constraints shared by every customSize-capable model (edges
+// multiples of 16, ratio <= 3:1, 655_360..8_294_400 total px, max edge <
+// 3840) — originally measured against gpt-image-2, re-verified against
+// gpt-image-2.5-flare/sunburst (1536x640 and 3072x1024 both accepted).
+// Sizes above 2560x1440 are experimental upstream. Named for the model it was
+// first measured on; kept as-is rather than renamed as the envelope now
+// serves every customSize model.
 export const GPT_IMAGE_2_SIZE = {
   edgeMultiple: 16,
   maxRatio: 3,
@@ -84,12 +138,14 @@ export const INPUT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] 
 /** Fields shared by the generate and edit requests. */
 const commonImageFields = {
   prompt: z.string().min(1).max(32_000),
-  model: z.enum([...IMAGE_MODELS, 'auto'] as const).default('auto'),
+  // Accepts LEGACY_REQUEST_MODELS alongside IMAGE_MODELS — a deploy compat shim, see its doc
+  // comment in this file. `resolveModel` routes a legacy id exactly like `'auto'`.
+  model: z.enum([...IMAGE_MODELS, ...LEGACY_REQUEST_MODELS, 'auto'] as const).default('auto'),
   size: z
     .string()
     .regex(/^(auto|\d{2,4}x\d{2,4})$/, "size must be 'auto' or 'WxH'")
     .default('auto'),
-  quality: z.enum(['low', 'medium', 'high', 'auto']).default('auto'),
+  quality: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'auto']).default('auto'),
   background: z.enum(['transparent', 'opaque', 'auto']).default('auto'),
   output_format: z.enum(['png', 'webp', 'jpeg']).default('png'),
   output_compression: z.number().int().min(0).max(100).optional(),
@@ -188,11 +244,17 @@ export const generateResponseSchema = z.object({
    */
   model: z.enum(IMAGE_MODELS),
   /**
-   * Model the client asked for. Also `IMAGE_MODELS`: the request schema above
-   * only accepts a currently-generatable model (or `auto`), so nothing else
-   * can reach this field on a fresh response.
+   * Model the client asked for, echoed verbatim — widened to
+   * `LEGACY_REQUEST_MODELS` alongside `IMAGE_MODELS`/`'auto'` for the same
+   * deploy-compat reason the request schema is: a pre-2026-09-23 app build's
+   * `model: "gpt-image-2"` must round-trip into a valid response, not just a
+   * valid request. Honest over convenient: echoing the literal value the
+   * caller sent (rather than laundering it into `'auto'`) is what the
+   * `KNOWN_IMAGE_MODELS`-based sidecar schema (`sidecar.ts`) already expects —
+   * it has accepted every `KnownImageModel` here since before this shim
+   * existed, so persisting this field verbatim was always going to parse.
    */
-  requested_model: z.enum([...IMAGE_MODELS, 'auto'] as const),
+  requested_model: z.enum([...IMAGE_MODELS, ...LEGACY_REQUEST_MODELS, 'auto'] as const),
   /** True when the gateway overrode the requested model. */
   routed: z.boolean(),
   routing_reason: z.string().optional(),

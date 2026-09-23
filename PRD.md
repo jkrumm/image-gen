@@ -19,7 +19,7 @@ The redesign turns the app from an API console into a studio with a brain. Full 
 - MCP facade, multi-user, cloud state, public exposure — **except delivery of finished assets via image-share (Share/Publish from the Library inspector)**, which is a deliberate, scoped carve-out: HTTP to image-share only, no generic S3/SMB/SSH delivery connectors, no in-app public exposure of anything but an image a user explicitly published.
 - Style strength sliders, lineage graph canvases, embeddings/semantic search, auto-tagging, chat-shaped enhancement, in-app playbook editing, moderation simulators (rejected with rationale in `docs/concept.md` §9).
 - SQLite in the first waves — in-memory index over sidecars; SQLite is the named escape hatch.
-- SVG vectorization and transparency (gpt-image-2 + local matting) are not scheduled — status lives in `AGENTS.md` → *The studio is single-model*.
+- SVG vectorization is not scheduled. Transparency (previously an open gap needing local matting) shipped natively 2026-09-23 — both generatable models have a real alpha channel; status lives in `AGENTS.md` → *The studio generates on two models*.
 
 ## Waves (each ships working software; wave 1 may ship in slices, but the concept must stand across all of them)
 
@@ -41,9 +41,9 @@ Screenshot + CSS distillation sources; chained-edit drift guard; saved searches;
 
 ## Key constraints (live-probed; details `docs/research/endpoint-verification.md` + `AGENTS.md`)
 
-- Capability matrix (`MODEL_CAPABILITIES`) is the single source of truth: gpt-image-2 = custom sizes, no transparency, rejects `input_fidelity`; 1.5 = presets-only, transparency, fidelity; mini = cheap. ~~Transparency auto-routes to 1.5.~~ **Superseded**: the single-model retirement made `gpt-image-2` the only generatable model (`IMAGE_MODELS`), and `validateBackgroundForModel()` hard-rejects `background: 'transparent'` outright — there is no fallback to reroute to. The Plan's derivations must round-trip through `rules.ts`, never re-derive.
-- Cost: low ≈ $0.006, high ≈ $0.211 (35.8×); streaming +$0.002 flat; upstream may send fewer partials than requested — never wait on a fixed count.
-- Upstream wraps user errors in 503 `"..._user_error"`; `moderation_blocked` is one of them — never retried.
+- Capability matrix (`MODEL_CAPABILITIES`) is the single source of truth, keyed by `KnownImageModel`: `gpt-image-2.5-flare`/`-sunburst` = custom sizes, transparency, extended quality (`xhigh`/`max`), rejects `input_fidelity`; legacy `gpt-image-2`/`-1.5`/`-1-mini` retired from generate, kept for historical sidecars. **2026-09-23**: `IMAGE_MODELS` is now the flare/sunburst pair (`resolveModel` routes `auto` between them by endpoint/quality — see `AGENTS.md`); `validateBackgroundForModel()` passes for both, so transparency is producible again. The Plan's derivations must round-trip through `rules.ts`, never re-derive.
+- Cost (per generatable model, at 1024×1024): low ≈ $0.006, medium ≈ $0.013, high ≈ $0.053 (~9×), xhigh ≈ $0.094, max ≈ $0.211 (~35.8×); streaming overhead is per-model (flare: none; sunburst: ~+$0.002); upstream may send fewer partials than requested — never wait on a fixed count.
+- Upstream wraps user errors in 503 — either `"..._user_error"` in the body, or (gpt-image-2.5-era) a `StatusCode: BadRequest`-prefixed body with `"type":"invalid_request_error"` and no `user_error` substring; `moderation_blocked` is one of the former — never retried, either shape.
 - Gateway stays stateless; all state in `~/Pictures/ImageGen/` (sidecars authoritative, human-browsable, index rebuildable). Public repo: placeholders only, secrets via 1Password templates.
 
 ## Success criteria

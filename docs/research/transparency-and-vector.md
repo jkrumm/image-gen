@@ -2,9 +2,11 @@
 
 Question: gpt-image-2 has the best quality but **cannot** emit transparency. Should we generate on gpt-image-2 and strip the background ourselves, instead of routing to `gpt-image-1.5`? And can we ship SVG?
 
-> **Status update (2026-07-21) — decided.** The studio has gone **single-model on gpt-image-2**; `gpt-image-1.5` and `gpt-image-1-mini` are retired from the generate path (still parsed forever on the read path). That closes **Option A** — native alpha via gpt-image-1.5 is no longer reachable, so the "measure A against B first" step below is moot. **Option B (gpt-image-2 + Apple Vision matting) is the active path**, and transparency is **unavailable** until it is built. Chroma-key stays rejected for the reasons documented below. **Current status (2026-09): open, not scheduled — tracked in `AGENTS.md` → *The studio is single-model*, the one place that status lives.**
+> **Status update (2026-07-21) — decided.** The studio has gone **single-model on gpt-image-2**; `gpt-image-1.5` and `gpt-image-1-mini` are retired from the generate path (still parsed forever on the read path). That closes **Option A** — native alpha via gpt-image-1.5 is no longer reachable, so the "measure A against B first" step below is moot. **Option B (gpt-image-2 + Apple Vision matting) is the active path**, and transparency is **unavailable** until it is built. Chroma-key stays rejected for the reasons documented below.
 >
-> Everything under this line is the original 2026-07-16 snapshot, left intact deliberately: its value is that it was written *before* the decision. Read it as the reasoning that led here, not as current state.
+> **Status update (2026-09-23) — gap closed, superseding the above.** The generate path moved to `gpt-image-2.5-flare`/`gpt-image-2.5-sunburst`, and both have a real native alpha channel (probe-verified: `background: "transparent"` + png/webp returns RGBA, colortype 6). Transparency is **available again** — status lives in `AGENTS.md` → *The studio generates on two models*. Apple Vision matting (Option B) is no longer the active path for *fresh* generations; this file's Option-B analysis stays as historical record of the interim plan, not a live one. Chroma-key remains rejected regardless — its failure mode (colour leakage, non-uniform "solid" colours, 1px halos) has nothing to do with whether native alpha exists.
+>
+> Everything under this line is the original 2026-07-16 snapshot, left intact deliberately: its value is that it was written *before* either decision. Read it as the reasoning that led here, not as current state.
 
 **Status (as written, 2026-07-16): decision-ready, not decided.** Nothing here is built. Sources at the bottom.
 

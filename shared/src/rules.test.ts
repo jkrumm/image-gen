@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { IMAGE_MODELS, KNOWN_IMAGE_MODELS, SIZE_PRESETS } from './contract.js'
 import {
+  resolveModel,
+  routingReason,
   snapSizeForModel,
   validateBackgroundForModel,
   validateInputFidelityForModel,
+  validateQualityForModel,
   validateSizeForModel,
+  validateTransparentOutputFormat,
 } from './rules.js'
 
 describe('snapSizeForModel', () => {
@@ -134,5 +138,115 @@ describe('validateInputFidelityForModel', () => {
 
   test('accepts an undefined input_fidelity on gpt-image-2', () => {
     expect(validateInputFidelityForModel('gpt-image-2', undefined)).toBeNull()
+  })
+
+  test('rejects input_fidelity on both 2.5 models too — neither supports it', () => {
+    expect(validateInputFidelityForModel('gpt-image-2.5-flare', 'high')).toContain('input_fidelity')
+    expect(validateInputFidelityForModel('gpt-image-2.5-sunburst', 'low')).toContain(
+      'input_fidelity',
+    )
+  })
+})
+
+describe('validateTransparentOutputFormat', () => {
+  test('rejects transparent + jpeg with an actionable message', () => {
+    const error = validateTransparentOutputFormat('transparent', 'jpeg')
+    expect(error).not.toBeNull()
+    expect(error).toContain('alpha channel')
+  })
+
+  test('accepts transparent + png/webp, and any output format when background is not transparent', () => {
+    expect(validateTransparentOutputFormat('transparent', 'png')).toBeNull()
+    expect(validateTransparentOutputFormat('transparent', 'webp')).toBeNull()
+    expect(validateTransparentOutputFormat('opaque', 'jpeg')).toBeNull()
+    expect(validateTransparentOutputFormat('auto', 'jpeg')).toBeNull()
+  })
+})
+
+describe('validateQualityForModel', () => {
+  test('rejects xhigh/max on models without extendedQuality', () => {
+    for (const model of ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1-mini'] as const) {
+      expect(validateQualityForModel(model, 'xhigh')).not.toBeNull()
+      expect(validateQualityForModel(model, 'max')).not.toBeNull()
+    }
+  })
+
+  test('accepts xhigh/max on both 2.5 models', () => {
+    for (const model of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'] as const) {
+      expect(validateQualityForModel(model, 'xhigh')).toBeNull()
+      expect(validateQualityForModel(model, 'max')).toBeNull()
+    }
+  })
+
+  test('never rejects low/medium/high/auto on any model', () => {
+    for (const model of KNOWN_IMAGE_MODELS) {
+      expect(validateQualityForModel(model, 'low')).toBeNull()
+      expect(validateQualityForModel(model, 'medium')).toBeNull()
+      expect(validateQualityForModel(model, 'high')).toBeNull()
+      expect(validateQualityForModel(model, 'auto')).toBeNull()
+    }
+  })
+})
+
+describe('resolveModel / routingReason', () => {
+  test('an explicit model is always honoured, on either endpoint/quality', () => {
+    expect(resolveModel({ model: 'gpt-image-2.5-flare', endpoint: 'edit', quality: 'high' })).toBe(
+      'gpt-image-2.5-flare',
+    )
+    expect(
+      routingReason({ model: 'gpt-image-2.5-flare', endpoint: 'edit', quality: 'high' }),
+    ).toBeNull()
+  })
+
+  test('auto + edit always routes to sunburst, regardless of quality', () => {
+    for (const quality of ['low', 'medium', 'high', 'xhigh', 'max', 'auto'] as const) {
+      expect(resolveModel({ model: 'auto', endpoint: 'edit', quality })).toBe(
+        'gpt-image-2.5-sunburst',
+      )
+      expect(routingReason({ model: 'auto', endpoint: 'edit', quality })).not.toBeNull()
+    }
+  })
+
+  test('auto + generate at high/xhigh/max routes to sunburst', () => {
+    for (const quality of ['high', 'xhigh', 'max'] as const) {
+      expect(resolveModel({ model: 'auto', endpoint: 'generate', quality })).toBe(
+        'gpt-image-2.5-sunburst',
+      )
+    }
+  })
+
+  test('auto + generate at low/medium/auto routes to flare', () => {
+    for (const quality of ['low', 'medium', 'auto'] as const) {
+      expect(resolveModel({ model: 'auto', endpoint: 'generate', quality })).toBe(
+        'gpt-image-2.5-flare',
+      )
+    }
+  })
+
+  describe('a legacy request model (deploy-compat shim)', () => {
+    test('routes exactly like auto — generate low to flare, edit to sunburst', () => {
+      expect(resolveModel({ model: 'gpt-image-2', endpoint: 'generate', quality: 'low' })).toBe(
+        'gpt-image-2.5-flare',
+      )
+      expect(resolveModel({ model: 'gpt-image-2', endpoint: 'generate', quality: 'high' })).toBe(
+        'gpt-image-2.5-sunburst',
+      )
+      expect(resolveModel({ model: 'gpt-image-2', endpoint: 'edit', quality: 'low' })).toBe(
+        'gpt-image-2.5-sunburst',
+      )
+    })
+
+    test('still reports routed (non-null reason) naming the retired id, unlike auto', () => {
+      const legacyReason = routingReason({
+        model: 'gpt-image-2',
+        endpoint: 'generate',
+        quality: 'low',
+      })
+      const autoReason = routingReason({ model: 'auto', endpoint: 'generate', quality: 'low' })
+      expect(legacyReason).not.toBeNull()
+      expect(legacyReason).toContain('gpt-image-2')
+      expect(legacyReason).toContain('retired')
+      expect(legacyReason).not.toBe(autoReason)
+    })
   })
 })

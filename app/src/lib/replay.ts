@@ -6,27 +6,29 @@
  * so the replay-request shape and (above all) the size-snap chokepoint are pinned by unit tests.
  *
  * The replay hazard (repo AGENTS.md / the G5 brief): a recorded `params.size` is truthful but not
- * necessarily replayable — gpt-image-2 returns non-16-divisible dimensions for `size: "auto"`
- * (observed live: 1024x1024 in -> 1254x1254 out), and re-sending that 400s upstream. Every
- * function here that turns a saved generation back into a request pipes the size through
- * `snapSizeForModel`, resolving the model first since size validity is per-model.
+ * necessarily replayable — gpt-image-2 (and its 2.5 successors) return non-16-divisible dimensions
+ * for `size: "auto"` (observed live: 1024x1024 in -> 1254x1254 out), and re-sending that 400s
+ * upstream. Every function here that turns a saved generation back into a request pipes the size
+ * through `snapSizeForModel`, resolving the model first since size validity is per-model.
  *
- * The second replay hazard, since the studio went gpt-image-2-only: a sidecar may name a model
- * that can no longer generate (`gpt-image-1.5`, `gpt-image-1-mini`) and may carry parameters only
- * those models accepted (`background: 'transparent'`, `input_fidelity`). Replaying such a
- * generation must still work end-to-end, so those fields are coerced into a valid gpt-image-2
- * request — but never silently (concept §2's central taboo). Every coercion is returned alongside
- * the request as a `ReplayCoercion` for the caller to surface.
+ * The second replay hazard: a sidecar may name a model that can no longer generate (`gpt-image-2`,
+ * `-1.5`, `-1-mini`) and may carry parameters only those models accepted (`input_fidelity`).
+ * Replaying such a generation must still work end-to-end, so those fields are coerced into a valid
+ * request against a current generatable model — but never silently (concept §2's central taboo).
+ * `background: 'transparent'` needs no coercion any more (both generatable models have an alpha
+ * channel); the check below stays as a defensive no-op in case that ever regresses. Every coercion
+ * is returned alongside the request as a `ReplayCoercion` for the caller to surface.
  */
 import {
-  DEFAULT_MODEL,
   IMAGE_MODELS,
   MODEL_CAPABILITIES,
+  resolveModel,
   snapSizeForModel,
   type GenerateRequestInput,
   type GenerationParent,
   type ImageModel,
   type KnownImageModel,
+  type RequestQuality,
 } from '@image-gen/shared'
 import type { GenerationMetadata } from './metadata'
 
@@ -86,22 +88,31 @@ export function requestFromMetadata(metadata: GenerationMetadata): RecordedReque
 
 /**
  * The chokepoint every replay path must go through (repo AGENTS.md's "replay hazard"). In order:
- * retires a non-generatable model onto `DEFAULT_MODEL`, drops `background: 'transparent'` and
- * `input_fidelity` when the generatable model rejects them, then snaps the recorded size into
- * validity. `snapSizeForModel` is handed the *recorded* model — it resolves the generatable
- * target itself, and is a no-op for `'auto'` and already-valid sizes.
+ * retires a non-generatable model onto the model `resolveModel`'s routing rule would pick for this
+ * generation (edit → sunburst; a recorded `high`/`xhigh`/`max` generate → sunburst; else flare —
+ * same rule as a fresh `auto` request), drops `input_fidelity` when the resolved model rejects it,
+ * then snaps the recorded size into validity. `background: 'transparent'` needs no coercion any
+ * more — both generatable models have an alpha channel; the check below is a defensive no-op kept
+ * for the day that regresses. `snapSizeForModel` is handed the *recorded* model — it resolves the
+ * generatable target itself, and is a no-op for `'auto'` and already-valid sizes.
  */
 export function snappedReplayRequest(metadata: GenerationMetadata): ReplayPlan {
   const recorded = requestFromMetadata(metadata)
   const coercions: ReplayCoercion[] = []
 
-  const model: ImageModel = isGeneratable(recorded.model) ? recorded.model : DEFAULT_MODEL
+  const model: ImageModel = isGeneratable(recorded.model)
+    ? recorded.model
+    : resolveModel({
+        model: 'auto',
+        endpoint: metadata.kind === 'edit' ? 'edit' : 'generate',
+        quality: (recorded.quality ?? 'auto') as RequestQuality,
+      })
   if (model !== recorded.model) {
     coercions.push({
       field: 'model',
       from: recorded.model,
       to: model,
-      reason: `${recorded.model} is retired — the studio generates with ${model} only`,
+      reason: `${recorded.model} is retired — the studio generates with ${IMAGE_MODELS.join(' / ')}`,
     })
   }
 

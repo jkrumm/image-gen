@@ -43,7 +43,7 @@ export const promptFragmentSchema = z
 export const planOverridesSchema = z.object({
   model: z.enum([...IMAGE_MODELS, 'auto'] as const).optional(),
   size: z.string().optional(),
-  quality: z.enum(['low', 'medium', 'high', 'auto']).optional(),
+  quality: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'auto']).optional(),
   background: z.enum(['transparent', 'opaque', 'auto']).optional(),
   n: z.number().int().min(1).max(10).optional(),
   moderation: z.enum(['auto', 'low']).optional(),
@@ -143,7 +143,7 @@ export const planSettingsSchema = z.object({
   endpoint: z.enum(['generate', 'edit']),
   model: z.enum(IMAGE_MODELS),
   size: z.string(),
-  quality: z.enum(['low', 'medium', 'high', 'auto']),
+  quality: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'auto']),
   background: z.enum(['transparent', 'opaque', 'auto']),
   n: z.number().int().min(1).max(10),
   moderation: z.enum(['auto', 'low']),

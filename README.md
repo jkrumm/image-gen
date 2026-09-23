@@ -11,7 +11,7 @@ A small `shared/` workspace package holds the zod contract and the prompting pla
 
 ## Status
 
-- **Gateway: live on the VPS** (`make gateway-status`, `make gateway-smoke`). Single model, `gpt-image-2`; transparency is an open gap, not scheduled (`AGENTS.md`).
+- **Gateway: live on the VPS** (`make gateway-status`, `make gateway-smoke`). Two models, `gpt-image-2.5-flare`/`gpt-image-2.5-sunburst`; transparency is available on both (`AGENTS.md`).
 - **Studio app: revived on the MacBook** (its UI machine — see *MacBook install*). Agents never need it: generation from the Mac mini goes through `imgcli gen` (the dotfiles `/img` skill), which calls the same gateway and hands results to image-share.
 
 Scope and waves: [`PRD.md`](PRD.md). Mental model and IA: [`docs/concept.md`](docs/concept.md). Ground truth about the upstream: [`docs/research/endpoint-verification.md`](docs/research/endpoint-verification.md).

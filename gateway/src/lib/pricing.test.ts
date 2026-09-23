@@ -32,7 +32,7 @@ describe('computeCost', () => {
   })
 
   /**
-   * Regression guard for the single-model split: gpt-image-1.5 and
+   * Regression guard for the read/generate split: gpt-image-1.5 and
    * gpt-image-1-mini are no longer generatable, but the library is full of
    * sidecars recorded against them. If `RATES` is ever narrowed from
    * `KnownImageModel` to `ImageModel`, those all silently lose their price
@@ -57,6 +57,20 @@ describe('computeCost', () => {
     // price identically — $5/M in + $30/M out.
     expect(computeCost('gpt-5.6', usage)).toEqual({ usd: 35, source: 'computed' })
     expect(computeCost('gpt-5.6-sol', usage)).toEqual(computeCost('gpt-5.6', usage))
+  })
+
+  test('gpt-image-2.5-flare and gpt-image-2.5-sunburst price identically (same token rate)', () => {
+    const usage: Usage = {
+      input_tokens: 1000,
+      output_tokens: 2000,
+      total_tokens: 3000,
+      input_tokens_details: { text_tokens: 600, image_tokens: 400 },
+    }
+    expect(computeCost('gpt-image-2.5-flare', usage)).toEqual(
+      computeCost('gpt-image-2.5-sunburst', usage),
+    )
+    const expected = (600 / 1_000_000) * 5.0 + (400 / 1_000_000) * 8.0 + (2000 / 1_000_000) * 30.0
+    expect(computeCost('gpt-image-2.5-flare', usage).usd).toBeCloseTo(expected, 10)
   })
 
   test('unknown model returns no cost', () => {

@@ -6,7 +6,13 @@ import {
   generateResponseSchema,
   streamEventSchema,
 } from '@image-gen/shared'
-import { routeModel, validateBackground, validateSize } from '../lib/routing.js'
+import {
+  routeModel,
+  validateBackground,
+  validateQuality,
+  validateSize,
+  validateTransparentFormat,
+} from '../lib/routing.js'
 import {
   generateImages,
   openGenerateStream,
@@ -22,7 +28,11 @@ import { buildUpstreamErrorBody } from '../lib/moderation-error.js'
 export const generateRoutes = new Elysia().post(
   '/generate',
   async ({ body, status, set }) => {
-    const { model, routed, reason } = routeModel({ model: body.model })
+    const { model, routed, reason } = routeModel({
+      model: body.model,
+      endpoint: 'generate',
+      quality: body.quality,
+    })
 
     const sizeError = validateSize(model, body.size)
     if (sizeError) {
@@ -30,12 +40,25 @@ export const generateRoutes = new Elysia().post(
     }
 
     // Business rule the request schema can't express: `transparent` is a valid
-    // *value* (historical sidecars carry it) but no generatable model has an
-    // alpha channel. Refuse loudly rather than downgrading to opaque behind the
-    // user's back or letting upstream 400 surface as a 502.
+    // *value* but a legacy/non-generatable model (reachable only via a bug
+    // upstream of this route) may have no alpha channel. Refuse loudly rather
+    // than downgrading to opaque behind the user's back or letting upstream
+    // 400 surface as a 502.
     const backgroundError = validateBackground(model, body.background)
     if (backgroundError) {
       return status(400, { error: { message: backgroundError, type: 'invalid_request_error' } })
+    }
+
+    const transparentFormatError = validateTransparentFormat(body.background, body.output_format)
+    if (transparentFormatError) {
+      return status(400, {
+        error: { message: transparentFormatError, type: 'invalid_request_error' },
+      })
+    }
+
+    const qualityError = validateQuality(model, body.quality)
+    if (qualityError) {
+      return status(400, { error: { message: qualityError, type: 'invalid_request_error' } })
     }
 
     const upstreamParams: GenerateImagesParams = {

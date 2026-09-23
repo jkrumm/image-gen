@@ -49,7 +49,7 @@ const VALID_LLM_PLAN = {
   assumptions: ['assumed dusk mood'],
   warnings: [],
   proposed_settings: {
-    model: 'gpt-image-2',
+    model: 'gpt-image-2.5-flare',
     size: 'auto',
     quality: 'medium',
     background: 'opaque',
@@ -162,7 +162,7 @@ describe('POST /enhance', () => {
       },
     ))
 
-  test('a transparent-background proposal is corrected to opaque, not rerouted', async () =>
+  test('a transparent-background proposal is passed through, not corrected — both models have an alpha channel', async () =>
     withMockedFetch(
       async () =>
         chatCompletion({
@@ -172,9 +172,9 @@ describe('POST /enhance', () => {
       async () => {
         const res = await postEnhance({ brief: 'an app icon' })
         const parsed = planResponseSchema.parse(await res.json())
-        expect(parsed.settings.model).toBe('gpt-image-2')
-        expect(parsed.settings.background).toBe('opaque')
-        expect(parsed.assumptions.some((note) => note.includes('alpha channel'))).toBe(true)
+        expect(parsed.settings.model).toBe('gpt-image-2.5-flare')
+        expect(parsed.settings.background).toBe('transparent')
+        expect(parsed.assumptions.some((note) => note.includes('alpha channel'))).toBe(false)
       },
     ))
 
@@ -190,13 +190,27 @@ describe('POST /enhance', () => {
       async () =>
         chatCompletion({
           ...VALID_LLM_PLAN,
-          proposed_settings: { ...VALID_LLM_PLAN.proposed_settings, model: 'gpt-image-1.5' },
+          proposed_settings: { ...VALID_LLM_PLAN.proposed_settings, model: 'gpt-image-2' },
         }),
       async () => {
         const res = await postEnhance({ brief: 'an app icon' })
         expect(res.status).toBe(200)
         const parsed = planResponseSchema.parse(await res.json())
-        expect(parsed.settings.model).toBe('gpt-image-2')
+        expect(parsed.settings.model).toBe('gpt-image-2.5-flare')
+      },
+    ))
+
+  test('an xhigh/max quality proposal is honoured on both generatable models', async () =>
+    withMockedFetch(
+      async () =>
+        chatCompletion({
+          ...VALID_LLM_PLAN,
+          proposed_settings: { ...VALID_LLM_PLAN.proposed_settings, quality: 'xhigh' },
+        }),
+      async () => {
+        const res = await postEnhance({ brief: 'a print-ready poster' })
+        const parsed = planResponseSchema.parse(await res.json())
+        expect(parsed.settings.quality).toBe('xhigh')
       },
     ))
 

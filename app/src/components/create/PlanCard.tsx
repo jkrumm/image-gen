@@ -141,7 +141,6 @@ export function PlanCard({
         <Group justify="space-between" wrap="wrap">
           <Group gap="sm">
             <FormRow label="Intent" htmlFor="plan-intent" style={{ width: 140 }}>
-              {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
               <Select
                 id="plan-intent"
                 data={INTENT_OPTIONS}

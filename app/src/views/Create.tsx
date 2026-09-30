@@ -707,7 +707,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
     <Stack gap="lg" p="lg" maw={860} mx="auto">
       <Group gap="sm" wrap="wrap">
         <FormRow label="Project" htmlFor="create-project" style={{ width: 200 }}>
-          {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
           <Select
             id="create-project"
             placeholder="No project"
@@ -719,7 +718,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
           />
         </FormRow>
         <FormRow label="Style guide" htmlFor="create-style-guide" style={{ width: 200 }}>
-          {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
           <Select
             id="create-style-guide"
             placeholder="No style guide"
@@ -804,7 +802,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
             htmlFor="create-preset"
             {...(presetDescription !== undefined ? { hint: presetDescription } : {})}
           >
-            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
             <Select
               id="create-preset"
               placeholder="Apply a preset…"
@@ -827,7 +824,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
               </Group>
             </FormRow>
             <FormRow label="Format" htmlFor="create-format">
-              {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
               <Select
                 id="create-format"
                 data={FORMAT_OPTIONS}
@@ -854,7 +850,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
           </Group>
 
           <FormGroup label="Size">
-            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
             <SegmentedControl
               value={sizeChoice}
               onChange={setSizeChoicePinned}
@@ -871,7 +866,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
           </FormGroup>
 
           <FormGroup label="Quality">
-            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
             <SegmentedControl
               value={quality}
               onChange={(value) => setQualityPinned(value as GenerateRequest['quality'])}
@@ -883,7 +877,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
             label="Background"
             {...(transparentFormatError !== null ? { error: transparentFormatError } : {})}
           >
-            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
             <SegmentedControl
               value={background}
               onChange={(value) => setBackgroundPinned(value as GenerateRequest['background'])}
@@ -919,7 +912,6 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
               </FormRow>
             )}
             <FormRow label="Moderation" htmlFor="create-moderation">
-              {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
               <Select
                 id="create-moderation"
                 data={MODERATION_OPTIONS}

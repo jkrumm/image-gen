@@ -13,11 +13,10 @@ import {
   Title,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { VX } from 'basalt-ui/tokens'
+import { CONTAINER_CLASSES, VX } from 'basalt-ui/tokens'
 import { useMemo, useRef, useState, type DragEvent } from 'react'
 import type { LibraryEntry } from '../../lib/library'
 import { LibraryPickerModal } from './LibraryPickerModal'
-import { CONTAINER_CLASSES } from '../../lib/container-classes'
 
 export type ReferenceItem = { id: string; file: File }
 export type ReferenceItemWithUrl = ReferenceItem & { url: string }

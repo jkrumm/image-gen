@@ -15,10 +15,10 @@ import { notifications } from '@mantine/notifications'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { EmptyState } from 'basalt-ui'
+import { CONTAINER_CLASSES } from 'basalt-ui/tokens'
 import { useEffect, useState } from 'react'
 import type { Role } from '@image-gen/shared'
 import { absolutePath, type LibraryEntry } from '../../lib/library'
-import { CONTAINER_CLASSES } from '../../lib/container-classes'
 
 /** Maps a saved image's on-disk format back to a MIME type for constructing a `File`. */
 function mimeTypeForFormat(format: 'png' | 'webp' | 'jpeg'): string {

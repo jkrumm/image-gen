@@ -4,6 +4,7 @@ import { notifications } from '@mantine/notifications'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { EmptyState } from 'basalt-ui'
+import { CONTAINER_CLASSES } from 'basalt-ui/tokens'
 import { useEffect, useMemo, useState } from 'react'
 import type { CreateSeed, RefineSeed } from '../App'
 import { FacetChips } from '../components/library/FacetChips'
@@ -35,7 +36,6 @@ import { withImageRoleAdded, withImageRoles, withImageStarred } from '../lib/rol
 import { useQueue } from '../lib/queue'
 import { isSettingsConfigured, type Settings } from '../lib/settings'
 import { studioStore } from '../lib/studio-store'
-import { CONTAINER_CLASSES } from '../lib/container-classes'
 
 /** Maps a saved image's on-disk format back to a MIME type for constructing a `File`. */
 function mimeTypeForFormat(format: GenerationImageMeta['format']): string {

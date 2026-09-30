@@ -204,6 +204,7 @@ export function Refine({ seed }: RefineProps) {
 
       <Group align="flex-start" gap="lg" wrap="wrap">
         <Stack gap="sm" style={{ flex: '1 1 420px', minWidth: 320 }}>
+          {/* theme-allow control-outside-home — a canvas render-mode toggle bound to the RefineCanvas below it: not a page filter or tab, nothing to put in the URL or a FieldHandle */}
           <SegmentedControl
             value={mode}
             onChange={(value) => setMode(value as PreviewMode)}

@@ -17,6 +17,7 @@ import { VX } from 'basalt-ui/tokens'
 import { useMemo, useRef, useState, type DragEvent } from 'react'
 import type { LibraryEntry } from '../../lib/library'
 import { LibraryPickerModal } from './LibraryPickerModal'
+import { CONTAINER_CLASSES } from '../../lib/container-classes'
 
 export type ReferenceItem = { id: string; file: File }
 export type ReferenceItemWithUrl = ReferenceItem & { url: string }
@@ -171,7 +172,15 @@ export function ReferencesRail({ items, onItemsChange, libraryEntries }: Referen
         </Box>
 
         {itemsWithUrls.length > 0 && (
-          <SimpleGrid cols={{ base: 3, sm: 4, md: 6 }} spacing="sm">
+          <SimpleGrid
+            type="container"
+            cols={{
+              base: 3,
+              [`${CONTAINER_CLASSES.regular}px`]: 4,
+              [`${CONTAINER_CLASSES.wide}px`]: 6,
+            }}
+            spacing="sm"
+          >
             {itemsWithUrls.map((item, index) => (
               // theme-allow card-inset — square thumbnail needs a tight uniform padding, not the content-card xs/sm inset
               <Card key={item.id} padding={4} pos="relative">

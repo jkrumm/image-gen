@@ -13,6 +13,7 @@ import {
   Textarea,
   Tooltip,
 } from '@mantine/core'
+import { FormRow } from 'basalt-ui/forms'
 import type { KeyboardEvent } from 'react'
 
 const INTENT_OPTIONS = INTENTS.map((intent) => ({ value: intent, label: intent }))
@@ -139,17 +140,19 @@ export function PlanCard({
 
         <Group justify="space-between" wrap="wrap">
           <Group gap="sm">
-            <Select
-              label="Intent"
-              data={INTENT_OPTIONS}
-              value={intent}
-              onChange={(value) => {
-                if (value) onIntentChange(value as Intent)
-              }}
-              allowDeselect={false}
-              size="xs"
-              w={140}
-            />
+            <FormRow label="Intent" htmlFor="plan-intent" style={{ width: 140 }}>
+              {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
+              <Select
+                id="plan-intent"
+                data={INTENT_OPTIONS}
+                value={intent}
+                onChange={(value) => {
+                  if (value) onIntentChange(value as Intent)
+                }}
+                allowDeselect={false}
+                size="xs"
+              />
+            </FormRow>
             <Tooltip label="Skip prose rewriting — still derives and validates settings, still runs the policy pre-check.">
               <Switch
                 label="Raw (skip rewrite)"

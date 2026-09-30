@@ -35,6 +35,7 @@ import { withImageRoleAdded, withImageRoles, withImageStarred } from '../lib/rol
 import { useQueue } from '../lib/queue'
 import { isSettingsConfigured, type Settings } from '../lib/settings'
 import { studioStore } from '../lib/studio-store'
+import { CONTAINER_CLASSES } from '../lib/container-classes'
 
 /** Maps a saved image's on-disk format back to a MIME type for constructing a `File`. */
 function mimeTypeForFormat(format: GenerationImageMeta['format']): string {
@@ -453,7 +454,15 @@ export function Library({
             description="Try a different search term, or clear the active filters."
           />
         ) : (
-          <SimpleGrid cols={{ base: 2, sm: 3, lg: 4 }} spacing="md">
+          <SimpleGrid
+            type="container"
+            cols={{
+              base: 2,
+              [`${CONTAINER_CLASSES.regular}px`]: 3,
+              [`${CONTAINER_CLASSES.wide}px`]: 4,
+            }}
+            spacing="md"
+          >
             {filteredEntries.map((entry) => (
               <GenerationCard
                 key={entry.metadata.id}

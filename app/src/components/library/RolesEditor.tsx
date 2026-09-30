@@ -28,6 +28,7 @@ export function RolesEditor({ image, saving, onRolesChange, onStarredChange }: R
           {image.starred ? '★' : '☆'}
         </ActionIcon>
       </Tooltip>
+      {/* theme-allow control-outside-home — rendered only inside GenerationInspector's Modal (an overlay non-home); the rule cannot see an overlay across the file boundary */}
       <Chip.Group
         multiple
         value={image.roles}

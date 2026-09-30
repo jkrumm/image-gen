@@ -18,6 +18,7 @@ import { EmptyState } from 'basalt-ui'
 import { useEffect, useState } from 'react'
 import type { Role } from '@image-gen/shared'
 import { absolutePath, type LibraryEntry } from '../../lib/library'
+import { CONTAINER_CLASSES } from '../../lib/container-classes'
 
 /** Maps a saved image's on-disk format back to a MIME type for constructing a `File`. */
 function mimeTypeForFormat(format: 'png' | 'webp' | 'jpeg'): string {
@@ -162,7 +163,11 @@ export function LibraryPickerModal({ opened, onClose, entries, onPick }: Library
             description="Star or role-tag library images as style-source, logo, or reference to find them here faster, or switch to All."
           />
         ) : (
-          <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm">
+          <SimpleGrid
+            type="container"
+            cols={{ base: 2, [`${CONTAINER_CLASSES.regular}px`]: 3 }}
+            spacing="sm"
+          >
             {visible.map((entry) => (
               <PickerTile key={entry.metadata.id} entry={entry} onPick={() => void pick(entry)} />
             ))}

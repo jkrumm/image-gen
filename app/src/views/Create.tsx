@@ -40,6 +40,7 @@ import {
 import { notifications } from '@mantine/notifications'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { EmptyState } from 'basalt-ui'
+import { FormGroup, FormRow } from 'basalt-ui/forms'
 import { VX } from 'basalt-ui/tokens'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CreateSeed } from '../App'
@@ -698,29 +699,37 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
     }
   }
 
+  const presetDescription = presetId
+    ? PRESETS.find((preset) => preset.id === presetId)?.description
+    : undefined
+
   return (
     <Stack gap="lg" p="lg" maw={860} mx="auto">
       <Group gap="sm" wrap="wrap">
-        <Select
-          label="Project"
-          placeholder="No project"
-          data={projects.map((project) => ({ value: project.slug, label: project.name }))}
-          value={selectedProjectSlug}
-          onChange={setSelectedProjectSlug}
-          clearable
-          size="xs"
-          w={200}
-        />
-        <Select
-          label="Style guide"
-          placeholder="No style guide"
-          data={styleGuides.map((guide) => ({ value: guide.slug, label: guide.name }))}
-          value={selectedStyleGuideSlug}
-          onChange={setSelectedStyleGuideSlug}
-          clearable
-          size="xs"
-          w={200}
-        />
+        <FormRow label="Project" htmlFor="create-project" style={{ width: 200 }}>
+          {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
+          <Select
+            id="create-project"
+            placeholder="No project"
+            data={projects.map((project) => ({ value: project.slug, label: project.name }))}
+            value={selectedProjectSlug}
+            onChange={setSelectedProjectSlug}
+            clearable
+            size="xs"
+          />
+        </FormRow>
+        <FormRow label="Style guide" htmlFor="create-style-guide" style={{ width: 200 }}>
+          {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
+          <Select
+            id="create-style-guide"
+            placeholder="No style guide"
+            data={styleGuides.map((guide) => ({ value: guide.slug, label: guide.name }))}
+            value={selectedStyleGuideSlug}
+            onChange={setSelectedStyleGuideSlug}
+            clearable
+            size="xs"
+          />
+        </FormRow>
         {isEdit && (
           <Badge variant="light" color="blue" mt="lg">
             edit — {references.length} reference{references.length === 1 ? '' : 's'}
@@ -790,59 +799,62 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
 
       <Card py="xs" px="sm">
         <Stack gap="md">
-          <Select
+          <FormRow
             label="Preset"
-            placeholder="Apply a preset…"
-            data={PRESET_OPTIONS}
-            value={presetId}
-            onChange={applyPreset}
-            description={
-              presetId ? PRESETS.find((preset) => preset.id === presetId)?.description : undefined
-            }
-            clearable
-          />
+            htmlFor="create-preset"
+            {...(presetDescription !== undefined ? { hint: presetDescription } : {})}
+          >
+            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
+            <Select
+              id="create-preset"
+              placeholder="Apply a preset…"
+              data={PRESET_OPTIONS}
+              value={presetId}
+              onChange={applyPreset}
+              clearable
+            />
+          </FormRow>
 
           <Group grow align="flex-start">
-            <Stack gap={4}>
-              <Text size="sm" fw={500}>
-                Model
-              </Text>
+            <FormRow
+              label="Model"
+              hint={`auto routes drafts (low/medium) to ${DEFAULT_MODEL} and edits/high+ finals to sunburst.`}
+            >
               <Group gap="xs" h={36}>
                 <Badge variant="light" size="lg">
                   {resolvedModel}
                 </Badge>
               </Group>
-              <Text size="xs" c="dimmed">
-                auto routes drafts (low/medium) to {DEFAULT_MODEL} and edits/high+ finals to
-                sunburst.
-              </Text>
-            </Stack>
-            <Select
-              label="Format"
-              data={FORMAT_OPTIONS}
-              value={outputFormat}
-              onChange={(value) => {
-                if (value) setOutputFormat(value as GenerateRequest['output_format'])
-              }}
-              allowDeselect={false}
-              error={transparentFormatError ?? undefined}
-            />
-            <NumberInput
-              label="Images"
-              min={1}
-              max={10}
-              value={n}
-              onChange={(value) => {
-                const parsed = typeof value === 'number' ? value : Number(value)
-                if (!Number.isNaN(parsed)) setNPinned(parsed)
-              }}
-            />
+            </FormRow>
+            <FormRow label="Format" htmlFor="create-format">
+              {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
+              <Select
+                id="create-format"
+                data={FORMAT_OPTIONS}
+                value={outputFormat}
+                onChange={(value) => {
+                  if (value) setOutputFormat(value as GenerateRequest['output_format'])
+                }}
+                allowDeselect={false}
+                error={transparentFormatError ?? undefined}
+              />
+            </FormRow>
+            <FormRow label="Images" htmlFor="create-images">
+              <NumberInput
+                id="create-images"
+                min={1}
+                max={10}
+                value={n}
+                onChange={(value) => {
+                  const parsed = typeof value === 'number' ? value : Number(value)
+                  if (!Number.isNaN(parsed)) setNPinned(parsed)
+                }}
+              />
+            </FormRow>
           </Group>
 
-          <Stack gap={4}>
-            <Text size="sm" fw={500}>
-              Size
-            </Text>
+          <FormGroup label="Size">
+            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
             <SegmentedControl
               value={sizeChoice}
               onChange={setSizeChoicePinned}
@@ -856,23 +868,22 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
                 error={customSizeError ?? undefined}
               />
             )}
-          </Stack>
+          </FormGroup>
 
-          <Stack gap={4}>
-            <Text size="sm" fw={500}>
-              Quality
-            </Text>
+          <FormGroup label="Quality">
+            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
             <SegmentedControl
               value={quality}
               onChange={(value) => setQualityPinned(value as GenerateRequest['quality'])}
               data={QUALITY_OPTIONS}
             />
-          </Stack>
+          </FormGroup>
 
-          <Stack gap={4}>
-            <Text size="sm" fw={500}>
-              Background
-            </Text>
+          <FormGroup
+            label="Background"
+            {...(transparentFormatError !== null ? { error: transparentFormatError } : {})}
+          >
+            {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
             <SegmentedControl
               value={background}
               onChange={(value) => setBackgroundPinned(value as GenerateRequest['background'])}
@@ -882,40 +893,43 @@ export function Create({ settings, createSeed, entries, onOpenSettings }: Create
                   : BACKGROUND_OPTIONS.filter((value) => value !== 'transparent')
               }
             />
-            {transparentFormatError !== null && (
-              <Text size="xs" c="red">
-                {transparentFormatError}
-              </Text>
-            )}
-          </Stack>
+          </FormGroup>
 
           <Group grow align="flex-start">
             {outputFormat !== 'png' && (
-              <NumberInput
+              <FormRow
                 label="Output compression"
-                description="0–100, jpeg/webp only."
-                min={0}
-                max={100}
-                {...(outputCompression !== undefined ? { value: outputCompression } : {})}
-                onChange={(value) => {
-                  if (value === '') {
-                    setOutputCompression(undefined)
-                    return
-                  }
-                  const parsed = typeof value === 'number' ? value : Number(value)
-                  setOutputCompression(Number.isNaN(parsed) ? undefined : parsed)
-                }}
-              />
+                hint="0–100, jpeg/webp only."
+                htmlFor="create-compression"
+              >
+                <NumberInput
+                  id="create-compression"
+                  min={0}
+                  max={100}
+                  {...(outputCompression !== undefined ? { value: outputCompression } : {})}
+                  onChange={(value) => {
+                    if (value === '') {
+                      setOutputCompression(undefined)
+                      return
+                    }
+                    const parsed = typeof value === 'number' ? value : Number(value)
+                    setOutputCompression(Number.isNaN(parsed) ? undefined : parsed)
+                  }}
+                />
+              </FormRow>
             )}
-            <Select
-              label="Moderation"
-              data={MODERATION_OPTIONS}
-              value={moderation}
-              onChange={(value) => {
-                if (value) setModerationPinned(value as GenerateRequest['moderation'])
-              }}
-              allowDeselect={false}
-            />
+            <FormRow label="Moderation" htmlFor="create-moderation">
+              {/* theme-allow raw-selection-control — WORKAROUND: homed in a FormRow/FormGroup; the 1.32.0 text lane omits both from its host tags */}
+              <Select
+                id="create-moderation"
+                data={MODERATION_OPTIONS}
+                value={moderation}
+                onChange={(value) => {
+                  if (value) setModerationPinned(value as GenerateRequest['moderation'])
+                }}
+                allowDeselect={false}
+              />
+            </FormRow>
           </Group>
 
           {transparencyMismatch !== null && (

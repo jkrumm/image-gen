@@ -40,7 +40,7 @@ import {
 import { notifications } from '@mantine/notifications'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { EmptyState } from 'basalt-ui'
-import { FormGroup, FormRow } from 'basalt-ui/forms'
+import { FormGroup, FormRow } from 'basalt-ui/controls'
 import { VX } from 'basalt-ui/tokens'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CreateSeed } from '../App'

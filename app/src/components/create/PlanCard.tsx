@@ -13,7 +13,7 @@ import {
   Textarea,
   Tooltip,
 } from '@mantine/core'
-import { FormRow } from 'basalt-ui/forms'
+import { FormRow } from 'basalt-ui/controls'
 import type { KeyboardEvent } from 'react'
 
 const INTENT_OPTIONS = INTENTS.map((intent) => ({ value: intent, label: intent }))

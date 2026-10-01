@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import type { Recipe } from '../../lib/imaging/recipe'
 import { absolutePath } from '../../lib/library'
 import type { GenerationDerivative } from '../../lib/metadata'
-import { CONTAINER_CLASSES } from 'basalt-ui/tokens'
+import { CONTAINER_CLASSES, VX } from 'basalt-ui/tokens'
 
 /** One tile in the "Derived" section: either a single exported file, or — when several
  * derivatives share a top-level folder (e.g. `icon.iconset/*.png`) — a collapsed group showing a
@@ -113,7 +113,7 @@ function DerivativeGroupTile({
               height: 100,
               objectFit: 'contain',
               display: 'block',
-              background: 'var(--vx-surface-2, transparent)',
+              background: VX.surface.subtle,
             }}
           />
         ) : (

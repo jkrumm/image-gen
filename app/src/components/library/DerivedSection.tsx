@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import type { Recipe } from '../../lib/imaging/recipe'
 import { absolutePath } from '../../lib/library'
 import type { GenerationDerivative } from '../../lib/metadata'
-import { CONTAINER_CLASSES, VX } from 'basalt-ui/tokens'
+import { CONTAINER_KEYS, VX } from 'basalt-ui/tokens'
 
 /** One tile in the "Derived" section: either a single exported file, or — when several
  * derivatives share a top-level folder (e.g. `icon.iconset/*.png`) — a collapsed group showing a
@@ -185,11 +185,7 @@ export function DerivedSection({
       <Text size="sm" fw={500}>
         Derived
       </Text>
-      <SimpleGrid
-        type="container"
-        cols={{ base: 2, [`${CONTAINER_CLASSES.regular}px`]: 3 }}
-        spacing="sm"
-      >
+      <SimpleGrid type="container" cols={{ base: 2, [CONTAINER_KEYS.regular]: 3 }} spacing="sm">
         {groupDerivatives(derivatives).map((group) => (
           <DerivativeGroupTile
             key={group.key}

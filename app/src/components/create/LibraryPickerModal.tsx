@@ -15,7 +15,7 @@ import { notifications } from '@mantine/notifications'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { EmptyState } from 'basalt-ui'
-import { CONTAINER_CLASSES } from 'basalt-ui/tokens'
+import { CONTAINER_KEYS } from 'basalt-ui/tokens'
 import { useEffect, useState } from 'react'
 import type { Role } from '@image-gen/shared'
 import { absolutePath, type LibraryEntry } from '../../lib/library'
@@ -163,11 +163,7 @@ export function LibraryPickerModal({ opened, onClose, entries, onPick }: Library
             description="Star or role-tag library images as style-source, logo, or reference to find them here faster, or switch to All."
           />
         ) : (
-          <SimpleGrid
-            type="container"
-            cols={{ base: 2, [`${CONTAINER_CLASSES.regular}px`]: 3 }}
-            spacing="sm"
-          >
+          <SimpleGrid type="container" cols={{ base: 2, [CONTAINER_KEYS.regular]: 3 }} spacing="sm">
             {visible.map((entry) => (
               <PickerTile key={entry.metadata.id} entry={entry} onPick={() => void pick(entry)} />
             ))}

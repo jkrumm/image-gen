@@ -13,7 +13,7 @@ import {
   Title,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { CONTAINER_CLASSES, VX } from 'basalt-ui/tokens'
+import { CONTAINER_KEYS, VX } from 'basalt-ui/tokens'
 import { useMemo, useRef, useState, type DragEvent } from 'react'
 import type { LibraryEntry } from '../../lib/library'
 import { LibraryPickerModal } from './LibraryPickerModal'
@@ -175,8 +175,8 @@ export function ReferencesRail({ items, onItemsChange, libraryEntries }: Referen
             type="container"
             cols={{
               base: 3,
-              [`${CONTAINER_CLASSES.regular}px`]: 4,
-              [`${CONTAINER_CLASSES.wide}px`]: 6,
+              [CONTAINER_KEYS.regular]: 4,
+              [CONTAINER_KEYS.wide]: 6,
             }}
             spacing="sm"
           >

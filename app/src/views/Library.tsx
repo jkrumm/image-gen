@@ -4,7 +4,7 @@ import { notifications } from '@mantine/notifications'
 import { error as logError } from '@tauri-apps/plugin-log'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { EmptyState } from 'basalt-ui'
-import { CONTAINER_CLASSES } from 'basalt-ui/tokens'
+import { CONTAINER_KEYS } from 'basalt-ui/tokens'
 import { useEffect, useMemo, useState } from 'react'
 import type { CreateSeed, RefineSeed } from '../App'
 import { FacetChips } from '../components/library/FacetChips'
@@ -458,8 +458,8 @@ export function Library({
             type="container"
             cols={{
               base: 2,
-              [`${CONTAINER_CLASSES.regular}px`]: 3,
-              [`${CONTAINER_CLASSES.wide}px`]: 4,
+              [CONTAINER_KEYS.regular]: 3,
+              [CONTAINER_KEYS.wide]: 4,
             }}
             spacing="md"
           >

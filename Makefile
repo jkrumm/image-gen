@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help up configure app app-run app-status app-logs dev check \
-        gateway-deploy gateway-status gateway-smoke gateway-logs
+        deploy verify logs gateway-deploy gateway-status gateway-smoke gateway-logs gateway-logs-bounded
 
 # The sources that determine what the built app IS. Anything listed here that
 # changes makes the installed app stale — see scripts/codesum.ts.
@@ -31,6 +31,17 @@ APP_LOG   := $(HOME)/Library/Logs/$(BUNDLE_ID)/imagegen.log
 help: ## Show this help (default target — a bare `make` runs it)
 	@awk 'BEGIN {FS = ":.*##"; printf "\nimage-gen — run \033[36mmake <target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 	@echo ""
+
+##@ Contract — the machine-facing interface (AGENTS.md ## Validate / ## Deploy / ## Verify & Monitor)
+
+deploy: ## Ship the merged default branch: re-trigger the RollHook gateway deploy and wait for it. (The Mac app is installed locally by `make app`, not deployed here.)
+	@$(MAKE) --no-print-directory gateway-deploy
+
+verify: ## Probe production: is the gateway live and healthy, and running the image built from your HEAD? Exits non-zero when not.
+	@$(MAKE) --no-print-directory gateway-status
+
+logs: ## Bounded tail of the deployed gateway's logs (last 200 lines, then exits)
+	@$(MAKE) --no-print-directory gateway-logs-bounded
 
 ##@ Both halves
 
@@ -234,6 +245,9 @@ gateway-status: ## Is the deployed gateway healthy, and is it running the image 
 
 gateway-logs: ## Tail the deployed gateway's container logs (does not terminate — Ctrl-C to stop)
 	ssh vps 'docker logs -f $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway")'
+
+gateway-logs-bounded: ## Print the last 200 lines of the deployed gateway's logs, then exit (the `make logs` contract target)
+	ssh vps 'docker logs --tail 200 $$(docker ps -q --filter "label=com.docker.compose.service=image-gen-gateway")'
 
 gateway-smoke: ## Probe the deployed gateway: /health (unauthenticated) + an authenticated /enhance round trip.
 	@BASE=$${IMAGE_GEN_BASE_URL:-$$($(call op_read,op://vps/image-gen-gateway/BASE_URL))}; \

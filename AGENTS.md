@@ -89,7 +89,9 @@ Routing for `model: 'auto'` (`resolveModel`/`routingReason` in `shared/src/rules
 - **The painted-checkerboard failure mode** (live bug, still true on the 2.5 models): if the prompt text asks for "transparent background" while the request sends `background: "opaque"`, the model doesn't error — it paints a fake checkerboard into the opaque pixels. Always check `hasAlpha`/PNG colortype on output, never trust the image visually. The playbook rule is no longer a flat prohibition: prompt text must simply *match* the `background` parameter sent (transparent wording is correct when `background: "transparent"`, wrong otherwise).
 - Cost (per generatable model, identical pricing between flare/sunburst): low ≈ $0.006/image, medium ≈ $0.013, high ≈ $0.053 (**~9× low**), xhigh ≈ $0.094, max ≈ $0.211 (**~35.8× low**) — why quality stays adjustable and previews default on. gpt-image-2's own `medium` anchor is now measured at 1756 tokens (was interpolated to 1173) — don't reuse any of these numbers for gpt-image-1.5 (~2.2× more expensive at the same tier).
 
-## Validation surface (know what "green" actually proves)
+## Validate
+
+`make check` (no side effects; exits non-zero on failure) runs `bun run pre` then `bun test` — the full local gate. What it does not cover is the Tauri runtime; the last bullet below says exactly which parts.
 
 - **`bun run pre`** = `format:check && lint && check:theme && check:sync && typecheck` — run it before proposing a commit. Plus `bun test` (402 tests). `check:theme` (`basalt-ui check-theme`, the palette + doctrine guard) and `check:sync` (`basalt-ui sync --check`, the managed-file drift gate) run through the LOCAL bin and are chained into `pre` so a basalt upgrade's guard promotions are reported locally, not first in CI (`.github/workflows/check.yml` runs the same two plus `doctor`); check-theme reads `basalt.roots` from the root `package.json`, which points at `app/src`; since 1.20 `bunx basalt-ui doctor` hard-fails when that resolves to zero files, so the two can no longer disagree. Every `theme-allow` must name its rule id — `theme-allow <rule-id> — <reason>`; a bare one warns (`theme-allow-unscoped`) and a first word naming no rule waives nothing. A comment-ONLY line directly above the finding is honoured, so a JSX child no longer has to be hoisted to a const to be annotatable.
 - **oxlint + oxfmt**, matching the basalt-ui/argo ecosystem (never Biome/ESLint/Prettier). Root `.oxlintrc.json` **extends the shipped basalt preset** (`./node_modules/basalt-ui/configs/oxlint.json` — oxlint rejects bare specifiers, so the relative path is required), which brings the `basalt/*` design-guard rules. Style is basalt's: single quotes, no semicolons, printWidth 100.
@@ -99,7 +101,21 @@ Routing for `model: 'auto'` (`resolveModel`/`routingReason` in `shared/src/rules
 - Root `bun run typecheck` covers all workspaces — but **don't run it while another agent is mid-flight in a package you don't own**; you'll see their in-flight errors and "fix" phantoms. Scope it: `cd app && bunx tsc --noEmit -p tsconfig.app.json`.
 - Driving the real app needs Rust + a GUI + a present human: that is the MacBook. The mini validates the gateway half (`bun test`, `make gateway-smoke`, `imgcli gen`).
 
-## Framework gotchas (each cost real debugging — verified in `node_modules`, not from memory)
+## Deploy
+
+The default branch is `master`. A push to `master` touching `gateway/**` or `shared/**` triggers `.github/workflows/deploy.yml`, which calls RollHook (OIDC) for a zero-downtime rolling update; the running container's `rollhook.allowed_repos=jkrumm/image-gen` label is what authorizes it. `make deploy` aliases `gateway-deploy`: it refuses when `gateway/`/`shared/` is dirty or unpushed, dispatches the deploy workflow via `gh workflow run`, and waits for the rollout to succeed. RollHook tags images by git SHA and never moves `:latest`, so it builds exactly the merged commit. On a health-check failure during rollout RollHook auto-rolls-back to the previous container; to undo a change deliberately, revert it on `master` and push. The Mac app is not shipped by this pipeline — `make app` builds, installs and fingerprints it locally (see `## Local dev`).
+
+## Verify & Monitor
+
+- **Health URL (full):** `https://image-gateway.<your-domain>/health` — returns `{"status":"ok"}`, or `503 {"status":"draining"}` while draining. It is Tailscale-only (a grey-cloud A record to the VPS tailnet address), so it is unreachable off-tailnet; the hostname is a placeholder because this repo is public.
+- **Uptime Kuma monitor:** `none` — no Kuma monitor is registered for this service. VPS health is covered by the container's own Docker healthcheck (`GET /health` every 10s) and the `make verify` probe below.
+- **OTel `service.name`:** `none` — the gateway is not OpenTelemetry-instrumented. It emits single-line JSON logs and posts usage to argo's sink (`ARGO_USAGE_URL`), not OTLP.
+
+`make verify` aliases `gateway-status`: it compares the running image's git-SHA tag against `HEAD` and probes `/health`, exiting non-zero on a mismatch, an unreadable image tag, or an unhealthy response. `make logs` aliases `gateway-logs-bounded`: the last 200 log lines, then exits.
+
+## Gotchas
+
+Each of these cost real debugging; they are verified in `node_modules`, not from memory.
 
 - **Elysia response validation is skipped for generator returns.** The compiled gate is `if (res instanceof Response === false && typeof res?.next !== 'function' && !(res instanceof ReadableStream))`. It checks the **returned value**, not the handler's declaration — so a plain `async` handler that *returns* an async-generator still streams, while returning a plain object still gets validated. Keep handlers plain `async` and return the generator only for streaming; making the handler itself `async function*` silently disables validation on the JSON path too. Pinned by `gateway/src/lib/elysia-generator-validation.test.ts`.
 - **Elysia returns `422`, not `400`, for request-schema violations.** Hand-rolled `400`s in the routes are *business-rule* checks (size/fidelity/mime) that zod can't express — don't add dead `400` slots for things the schema already covers.

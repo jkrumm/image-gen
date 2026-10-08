@@ -7,7 +7,7 @@ process.env['OPENAI_API_KEY'] ??= 'test-key'
 // Pinned explicitly so the assertion below tests the echo-back behaviour rather
 // than a second copy of env.ts's default — which is what let this test silently
 // encode 'gpt-5.6' and break when the default moved to a concrete model id.
-process.env['ENHANCE_MODEL'] ??= 'deepseek-v4.1-flash'
+process.env['ENHANCE_MODEL'] ??= 'gpt-6-luna'
 
 const { enhanceRoutes } = await import('./enhance.js')
 const { planResponseSchema, estimateCost } = await import('@image-gen/shared')

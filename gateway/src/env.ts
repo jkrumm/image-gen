@@ -16,15 +16,15 @@ const Env = z.object({
   // re-pointed at another tier without notice, silently changing both output
   // and bill.
   //
-  // deepseek-v4.1-flash at effort "high": expanding a brief into a structured
-  // JSON plan is mid-size, multi-field, single-shot work — the settled lane
-  // for DeepSeek across the estate, not the small/latency-critical lane luna
-  // covers. See modelpick/docs/decisions/model-configs.md.
-  ENHANCE_MODEL: z.string().min(1).default('deepseek-v4.1-flash'),
+  // gpt-6-luna at effort "high": expanding a brief into a structured JSON plan
+  // is short single-shot work. Moved off deepseek-v4.1-flash 2026-10-08 —
+  // gpt-6-luna passed modelpick's fast bench 15/15 at every effort at a third
+  // of DeepSeek's token price, and a live probe confirmed `response_format:
+  // json_object` at high/medium/none. See modelpick/docs/decisions/model-configs.md.
+  ENHANCE_MODEL: z.string().min(1).default('gpt-6-luna'),
   // Top-level `reasoning_effort` sent with every ENHANCE_MODEL call. Restricted
-  // to deepseek-v4.1-flash's accepted ladder on this endpoint — `medium`/`none`
-  // are refused outright.
-  ENHANCE_REASONING_EFFORT: z.enum(['low', 'high', 'xhigh', 'max']).default('high'),
+  // to the ladder probed on this endpoint for gpt-6-luna.
+  ENHANCE_REASONING_EFFORT: z.enum(['none', 'low', 'medium', 'high']).default('high'),
   ARGO_USAGE_URL: z.url().optional(),
   ARGO_API_SECRET: z.string().optional(),
   // Labels usage telemetry records so local dev runs don't get counted as VPS traffic.
